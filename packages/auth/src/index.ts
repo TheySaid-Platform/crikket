@@ -11,14 +11,9 @@ import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { APIError } from "better-auth/api"
 import { admin } from "better-auth/plugins/admin"
-import { emailOTP } from "better-auth/plugins/email-otp"
 import { organization } from "better-auth/plugins/organization"
 
-import {
-  sendEmailOtpEmail,
-  sendEmailVerificationLinkEmail,
-  sendOrganizationInvitationEmail,
-} from "./lib/email/auth-emails"
+import { sendOrganizationInvitationEmail } from "./lib/email/auth-emails"
 
 const MINUTE = 60
 const HOUR = 60 * MINUTE
@@ -37,15 +32,12 @@ const crossSubDomainCookies = env.BETTER_AUTH_COOKIE_DOMAIN
     }
   : undefined
 
-const socialProviders =
-  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
-    ? {
-        google: {
-          clientId: env.GOOGLE_CLIENT_ID,
-          clientSecret: env.GOOGLE_CLIENT_SECRET,
-        },
-      }
-    : undefined
+const socialProviders = {
+  google: {
+    clientId: env.GOOGLE_CLIENT_ID,
+    clientSecret: env.GOOGLE_CLIENT_SECRET,
+  },
+}
 
 type CheckoutProductSlug = "pro" | "pro-yearly" | "studio" | "studio-yearly"
 
@@ -120,7 +112,7 @@ export const auth = betterAuth({
     schema,
   }),
   trustedOrigins,
-  ...(socialProviders ? { socialProviders } : {}),
+  socialProviders,
   databaseHooks: {
     user: {
       create: {
@@ -144,24 +136,6 @@ export const auth = betterAuth({
       },
     },
   },
-  emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
-      await sendEmailVerificationLinkEmail({
-        email: user.email,
-        verificationUrl: url,
-      })
-    },
-    sendOnSignUp: false,
-    sendOnSignIn: false,
-    expiresIn: DAY,
-  },
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: false,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
-    revokeSessionsOnPasswordReset: true,
-  },
   session: {
     expiresIn: 14 * DAY,
     updateAge: DAY,
@@ -175,28 +149,6 @@ export const auth = betterAuth({
     storage: "database",
     window: MINUTE,
     max: 100,
-    customRules: {
-      "/sign-in/email": {
-        window: MINUTE,
-        max: 5,
-      },
-      "/sign-up/email": {
-        window: MINUTE,
-        max: 3,
-      },
-      "/email-otp/request-password-reset": {
-        window: MINUTE,
-        max: 5,
-      },
-      "/email-otp/send-verification-otp": {
-        window: MINUTE,
-        max: 5,
-      },
-      "/email-otp/reset-password": {
-        window: MINUTE,
-        max: 5,
-      },
-    },
   },
   advanced: {
     useSecureCookies: isProduction,
@@ -227,21 +179,6 @@ export const auth = betterAuth({
           await assertOrganizationCanAddMembers(invitation.organizationId)
         },
       },
-    }),
-    emailOTP({
-      sendVerificationOTP: async ({ email, otp, type }) => {
-        await sendEmailOtpEmail({
-          email,
-          otp,
-          type,
-        })
-      },
-      sendVerificationOnSignUp: true,
-      overrideDefaultEmailVerification: true,
-      expiresIn: 10 * MINUTE,
-      otpLength: 6,
-      allowedAttempts: 5,
-      storeOTP: "hashed",
     }),
     ...paymentsPlugins,
   ],

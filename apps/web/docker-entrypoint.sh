@@ -69,7 +69,6 @@ main() {
   require_env NEXT_PUBLIC_APP_URL
   require_env NEXT_PUBLIC_SERVER_URL
 
-  : "${NEXT_PUBLIC_GOOGLE_AUTH_ENABLED:=false}"
   : "${NEXT_PUBLIC_CRIKKET_KEY:=}"
   : "${NEXT_PUBLIC_DEMO_URL:=}"
   : "${NEXT_PUBLIC_POSTHOG_KEY:=}"
@@ -84,7 +83,6 @@ main() {
   replace_url_placeholder "https://__CRIKKET_DEMO_URL__" "$NEXT_PUBLIC_DEMO_URL"
   replace_placeholder "__CRIKKET_POSTHOG_KEY__" "$NEXT_PUBLIC_POSTHOG_KEY"
   replace_url_placeholder "https://__CRIKKET_POSTHOG_HOST__" "$NEXT_PUBLIC_POSTHOG_HOST"
-  replace_runtime_env_value "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED" "$NEXT_PUBLIC_GOOGLE_AUTH_ENABLED"
   replace_runtime_env_value "NEXT_PUBLIC_DEMO_URL" "$NEXT_PUBLIC_DEMO_URL"
   replace_runtime_env_value "NEXT_PUBLIC_POSTHOG_KEY" "$NEXT_PUBLIC_POSTHOG_KEY"
   replace_runtime_env_value "NEXT_PUBLIC_POSTHOG_HOST" "$NEXT_PUBLIC_POSTHOG_HOST"
