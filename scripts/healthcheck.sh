@@ -35,7 +35,6 @@ load_health_env() {
   API_URL="$(default_value "$WEB_ENV_FILE" "NEXT_PUBLIC_SERVER_URL" "")"
   BETTER_AUTH_URL="$(default_value "$SERVER_ENV_FILE" "BETTER_AUTH_URL" "")"
   CORS_ORIGINS="$(default_value "$SERVER_ENV_FILE" "CORS_ORIGINS" "")"
-  GOOGLE_AUTH_ENABLED="$(default_value "$WEB_ENV_FILE" "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED" "false")"
   GOOGLE_CLIENT_ID="$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_ID" "")"
   GOOGLE_CLIENT_SECRET="$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_SECRET" "")"
 }
@@ -97,16 +96,10 @@ check_env_alignment() {
     fail "CORS_ORIGINS must include NEXT_PUBLIC_APP_URL"
   fi
 
-  if [[ "$GOOGLE_AUTH_ENABLED" == "true" ]]; then
-    if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
-      pass "Google OAuth is enabled and credentials are configured"
-    else
-      fail "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET"
-    fi
-  elif [[ -n "$GOOGLE_CLIENT_ID" || -n "$GOOGLE_CLIENT_SECRET" ]]; then
-    warn_check "Google credentials are present but NEXT_PUBLIC_GOOGLE_AUTH_ENABLED is false"
+  if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
+    pass "Google OAuth credentials are configured"
   else
-    pass "Google OAuth is disabled"
+    fail "Google OAuth requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET"
   fi
 }
 

@@ -11,7 +11,6 @@ import { redirect } from "next/navigation"
 import { getProtectedAuthData } from "@/app/(protected)/_lib/get-protected-auth-data"
 import { DashboardPricingGate } from "@/app/(protected)/(dashboard)/_components/dashboard-pricing-gate"
 import { AppSidebar } from "@/components/app-sidebar"
-import { UnverifiedEmailBanner } from "@/components/auth/unverified-email-banner"
 import { DashboardBreadcrumbs } from "@/components/dashboard-breadcrumbs"
 import { Shell } from "@/components/shell"
 import { client } from "@/utils/orpc"
@@ -75,7 +74,6 @@ export default async function DashboardLayout({
           <ModeToggle />
         </header>
         <Shell>
-          {session.user.emailVerified ? null : <UnverifiedEmailBanner />}
           {isDashboardLocked ? (
             <DashboardPricingGate
               canManageBilling={canManageBilling}

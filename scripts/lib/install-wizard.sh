@@ -434,15 +434,8 @@ configure_auth() {
     die "CAPTURE_SUBMIT_TOKEN_SECRET must be at least 32 characters."
   fi
 
-  GOOGLE_CLIENT_ID=""
-  GOOGLE_CLIENT_SECRET=""
-  NEXT_PUBLIC_GOOGLE_AUTH_ENABLED="false"
-
-  if prompt_yes_no "Configure Google OAuth sign-in" "$( [[ -n "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_ID" "")" && -n "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_SECRET" "")" ]] && printf 'yes' || printf 'no' )"; then
-    GOOGLE_CLIENT_ID="$(prompt_required_value "Google OAuth client ID" "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_ID" "")")"
-    GOOGLE_CLIENT_SECRET="$(prompt_required_value "Google OAuth client secret" "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_SECRET" "")")"
-    NEXT_PUBLIC_GOOGLE_AUTH_ENABLED="true"
-  fi
+  GOOGLE_CLIENT_ID="$(prompt_required_value "Google OAuth client ID" "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_ID" "")")"
+  GOOGLE_CLIENT_SECRET="$(prompt_required_value "Google OAuth client secret" "$(default_value "$SERVER_ENV_FILE" "GOOGLE_CLIENT_SECRET" "")")"
 }
 
 configure_storage() {
@@ -583,7 +576,6 @@ write_web_env() {
 NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 NEXT_PUBLIC_SERVER_URL=${NEXT_PUBLIC_SERVER_URL}
-NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${NEXT_PUBLIC_GOOGLE_AUTH_ENABLED}
 
 # PostHog (optional)
 NEXT_PUBLIC_POSTHOG_KEY=${NEXT_PUBLIC_POSTHOG_KEY}
@@ -636,7 +628,6 @@ Auto-filled URLs:
   - BETTER_AUTH_URL=${BETTER_AUTH_URL}
   - CORS_ORIGINS=${CORS_ORIGINS}
   - BETTER_AUTH_COOKIE_DOMAIN=${BETTER_AUTH_COOKIE_DOMAIN}
-  - NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${NEXT_PUBLIC_GOOGLE_AUTH_ENABLED}
 
 Local bindings:
   - Web: ${WEB_PORT}
