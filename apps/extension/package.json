@@ -11,6 +11,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "publish:chrome": "bash scripts/publish.sh",
     "check-types": "tsc --noEmit -p tsconfig.json",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare"
