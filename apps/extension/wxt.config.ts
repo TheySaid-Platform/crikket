@@ -6,6 +6,8 @@ export default defineConfig({
   manifest: {
     name: "Crikket",
     short_name: "Crikket",
+    description:
+      "One-click bug reports with screen recording, console logs, and replay context for the TheySaid team.",
     action: {
       default_title: "Crikket",
       default_popup: "popup.html",

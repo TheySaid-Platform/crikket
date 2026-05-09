@@ -202,7 +202,7 @@ async function startVideoCapture(input: {
   )
 
   const recorderTab = await chrome.tabs.create({
-    active: false,
+    active: true,
     url: recorderUrl,
   })
 

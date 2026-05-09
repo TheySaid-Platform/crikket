@@ -41,9 +41,20 @@ export function useScreenCapture(): UseScreenCaptureReturn {
 
       streamRef.current = stream
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp9",
-      })
+      const preferredMimeTypes = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=opus",
+        "video/webm",
+      ]
+      const mimeType =
+        preferredMimeTypes.find((type) =>
+          MediaRecorder.isTypeSupported(type)
+        ) ?? ""
+      const mediaRecorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      )
 
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
