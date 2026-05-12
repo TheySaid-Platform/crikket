@@ -44,7 +44,6 @@ bunx --bun chrome-webstore-upload-cli@3 upload \
   --extension-id "$CHROME_EXTENSION_ID" \
   --client-id "$CHROME_CLIENT_ID" \
   --client-secret "$CHROME_CLIENT_SECRET" \
-  --refresh-token "$CHROME_REFRESH_TOKEN" \
-  --auto-publish
+  --refresh-token "$CHROME_REFRESH_TOKEN"
 
-echo "==> Done. Review queue: https://chrome.google.com/webstore/devconsole"
+echo "==> Uploaded as draft. Publish from https://chrome.google.com/webstore/devconsole"
