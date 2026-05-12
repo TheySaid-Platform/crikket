@@ -128,6 +128,16 @@ export function createS3StorageProvider(
         headers["content-encoding"] = input.contentEncoding
       }
 
+      // GCS auto-decompresses objects stored with Content-Encoding: gzip on
+      // GET unless the request opts in via Accept-Encoding. The AWS S3 SDK
+      // doesn't, so without this the server reads already-decompressed bytes
+      // and gunzipSync throws. Cache-Control: no-transform disables that
+      // transcoding so the bytes round-trip unchanged.
+      const cacheControl = input.contentEncoding ? "no-transform" : undefined
+      if (cacheControl) {
+        headers["cache-control"] = cacheControl
+      }
+
       const url = await getSignedUrl(
         client,
         new PutObjectCommand({
@@ -135,6 +145,7 @@ export function createS3StorageProvider(
           Key: input.filename,
           ContentEncoding: input.contentEncoding,
           ContentType: resolvedContentType,
+          CacheControl: cacheControl,
         }),
         {
           expiresIn: PRESIGNED_GET_URL_TTL_SECONDS,

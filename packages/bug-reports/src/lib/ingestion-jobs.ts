@@ -362,9 +362,13 @@ async function ingestDebuggerPayload(input: {
 }): Promise<PersistBugReportDebuggerDataResult> {
   const storage = getStorageProvider()
   const storedPayload = await storage.read(input.debuggerKey)
+  // Payloads uploaded before the storage layer started setting
+  // Cache-Control: no-transform may come back already decompressed (GCS
+  // auto-transcodes objects stored with Content-Encoding: gzip). Try
+  // gunzip first; fall back to the raw bytes if they're already plain JSON.
   const payloadBuffer =
     input.debuggerContentEncoding === "gzip"
-      ? gunzipSync(storedPayload)
+      ? tryGunzip(storedPayload)
       : storedPayload
   const rawPayload = JSON.parse(payloadBuffer.toString("utf8")) as {
     actions?: unknown[]
@@ -432,4 +436,12 @@ async function markBugReportIngestionJobFailure(input: {
 function serializeIngestionError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return message.slice(0, BUG_REPORT_INGESTION_MAX_ERROR_LENGTH)
+}
+
+function tryGunzip(data: Buffer): Buffer {
+  try {
+    return gunzipSync(data)
+  } catch {
+    return data
+  }
 }
