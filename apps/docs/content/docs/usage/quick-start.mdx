@@ -1,88 +1,66 @@
 ---
 title: Quick Start
-description: Create a public key and embed the Capture SDK in your site.
+description: Install the Crikket Chrome extension and capture your first bug.
 ---
 
 import { Step, Steps } from "fumadocs-ui/components/steps"
 
-This guide shows how to create a public key and use it to install the Capture SDK on your website.
+This guide installs the Crikket Chrome extension and captures your first
+bug report.
 
 ## Prerequisites
 
-- A Crikket organization
-- Admin or owner access to manage public keys
-- A website or app origin you control
+- A Crikket account and workspace
+- Chrome (or a Chromium-based browser like Edge, Brave, or Arc)
 
 <Steps>
   <Step>
 
-  ### Create a Public Key
+  ### Install the Extension
 
-  In Crikket, go to `Settings` -> `Public Keys`.
+  Install Crikket from the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/crikket/pjooelapomplepemjoebeanebffdieic).
 
-  Create one public key per owned website or app surface.
+  The extension landing card on your Crikket dashboard also surfaces the
+  install link.
 
-  </Step>
-
-  <Step>
-
-  ### Add Allowed Origins
-
-  Add the exact HTTP(S) origins where the widget is allowed to run, for example:
-
-  - `https://example.com`
-  - `https://www.example.com`
-  - `http://localhost:3000`
-
-  Public keys are safe to embed in client-side code.
+  If you self-host Crikket and prefer not to use the Web Store, see
+  [Install Without Web Store](/docs/extension).
 
   </Step>
 
   <Step>
 
-  ### Install the SDK
+  ### Sign In
 
-  ```bash
-  npm install @crikket-io/capture
-  ```
-
-  Or:
-
-  ```bash
-  bun add @crikket-io/capture
-  ```
+  Open the extension popup and sign in. The extension uses your existing
+  Crikket session — no separate credentials needed.
 
   </Step>
 
   <Step>
 
-  ### Initialize the Widget
+  ### Record Your First Bug
 
-  Run `init()` in a browser entrypoint:
+  - Press `Alt+Shift+R` (or click the extension and pick **Record screen**)
+    to start recording.
+  - Reproduce the issue.
+  - Press `Alt+Shift+S` to stop.
 
-  ```ts
-  import { init } from "@crikket-io/capture"
-
-  init({
-    key: "crk_your_public_key",
-    host: "https://api.crikket.io",
-  })
-  ```
-
-  This mounts the floating launcher on your page.
+  The recording uploads to your workspace with console logs, network
+  requests, and replay metadata attached.
 
   </Step>
 
   <Step>
 
-  ### Verify the Integration
+  ### Verify the Report
 
-  Confirm that:
+  Open the report from your dashboard. Confirm:
 
-  - the launcher appears on your site
-  - you can open the widget
-  - screenshot or screen recording capture starts
-  - the review form can submit successfully
+  - the video plays
+  - console / network panels show captured events
+  - the share link works
 
   </Step>
 
@@ -90,7 +68,9 @@ This guide shows how to create a public key and use it to install the Capture SD
 
 ## Notes
 
-- Use one public key per website or app surface.
-- Include local development origins if you want to test locally.
-- Screen capture permission prompts are expected browser behavior.
-- If you self-host Crikket, replace `https://api.crikket.io` with your own API origin.
+- For one-off screenshots, use `Alt+Shift+C` instead.
+- Screen capture permission prompts are expected browser behavior on first
+  use.
+- If you self-host Crikket, point the extension at your own deployment via
+  `VITE_APP_URL` / `VITE_SERVER_URL` (see
+  [Install Without Web Store](/docs/extension)).

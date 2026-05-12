@@ -13,6 +13,10 @@ import { APIError } from "better-auth/api"
 import { admin } from "better-auth/plugins/admin"
 import { organization } from "better-auth/plugins/organization"
 
+import {
+  tryAutoJoinByDomain,
+  tryAutoJoinForUserId,
+} from "./lib/auto-join-by-domain"
 import { sendOrganizationInvitationEmail } from "./lib/email/auth-emails"
 
 const MINUTE = 60
@@ -131,6 +135,31 @@ export const auth = betterAuth({
             throw new APIError("UNPROCESSABLE_ENTITY", {
               message: `Sign up is only available for ${allowedSignupDomains.filter((d) => d !== "*").join(", ")} domains.`,
             })
+          }
+        },
+        after: async (user) => {
+          try {
+            await tryAutoJoinByDomain({
+              userId: user.id,
+              email: user.email ?? "",
+              emailVerified: user.emailVerified ?? false,
+            })
+          } catch (error) {
+            console.error("[auto-join] failed during user.create.after", error)
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        after: async (session) => {
+          try {
+            await tryAutoJoinForUserId(session.userId)
+          } catch (error) {
+            console.error(
+              "[auto-join] failed during session.create.after",
+              error
+            )
           }
         },
       },

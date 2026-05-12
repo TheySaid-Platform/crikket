@@ -1,116 +1,39 @@
 ---
 title: Integration
-description: Integrate the Capture SDK with init(), Next.js, or React.
+description: Keyboard shortcuts, self-hosting, and team rollout for the Crikket extension.
 ---
 
-This page covers the recommended ways to initialize the Capture SDK with a public key.
+## Keyboard Shortcuts
 
-## Plain Browser Integration
+| Shortcut | Action |
+| --- | --- |
+| `Alt+Shift+R` | Start screen recording |
+| `Alt+Shift+S` | Stop the active recording |
+| `Alt+Shift+C` | Capture a screenshot |
 
-Use `init()` if you want the smallest integration surface in any browser app.
+Rebind these in `chrome://extensions/shortcuts` if they conflict with other
+extensions.
 
-```ts
-import { init } from "@crikket-io/capture"
+## Pointing the Extension At a Self-Hosted Crikket
 
-init({
-  key: "crk_your_public_key",
-  host: "https://api.crikket.io",
-})
-```
-
-Common options:
-
-- `key`: required public key from `Settings` -> `Public Keys`
-- `host`: Crikket API origin
-- `autoMount`: mounts automatically when omitted
-- `mountTarget`: custom element to mount into
-- `submitPath`: custom public ingest path
-- `zIndex`: custom stacking order for the widget
-
-If you need programmatic control, the package also exports runtime helpers:
-
-```ts
-import { close, init, open } from "@crikket-io/capture"
-
-init({
-  key: "crk_your_public_key",
-  host: "https://api.crikket.io",
-})
-
-open()
-close()
-```
-
-## Next.js 15.3+ with `instrumentation-client.ts`
-
-For Next.js 15.3 and newer, initialize the SDK once in `instrumentation-client.ts`.
-
-```ts
-import { init } from "@crikket-io/capture"
-
-const capturePublicKey = process.env.NEXT_PUBLIC_CRIKKET_KEY
-
-if (capturePublicKey) {
-  init({
-    key: capturePublicKey,
-    host: process.env.NEXT_PUBLIC_CRIKKET_HOST ?? "https://api.crikket.io",
-  })
-}
-```
-
-Recommended environment variables:
+The Chrome Web Store build targets `https://crikket.io`. To point a build at
+your own deployment, build the extension locally with your URLs:
 
 ```bash
-NEXT_PUBLIC_CRIKKET_KEY=crk_your_public_key
-NEXT_PUBLIC_CRIKKET_HOST=https://api.crikket.io
+# apps/extension/.env
+VITE_APP_URL=https://app.example.com
+VITE_SERVER_URL=https://api.example.com
 ```
 
-## React Integration
+Then build and load the unpacked output — see
+[Install Without Web Store](/docs/extension).
 
-Use `@crikket-io/capture/react` when you want a React-native mount point near your app root.
+## Rolling Out To A Team
 
-```tsx
-"use client"
-
-import { CapturePlugin } from "@crikket-io/capture/react"
-
-export function CaptureProvider(): React.JSX.Element {
-  return (
-    <CapturePlugin
-      host="https://api.crikket.io"
-      publicKey="crk_your_public_key"
-    />
-  )
-}
-```
-
-With environment variables:
-
-```tsx
-"use client"
-
-import { CapturePlugin } from "@crikket-io/capture/react"
-
-export function CaptureProvider(): React.JSX.Element | null {
-  const publicKey = process.env.NEXT_PUBLIC_CRIKKET_KEY
-
-  if (!publicKey) {
-    return null
-  }
-
-  return (
-    <CapturePlugin
-      host={process.env.NEXT_PUBLIC_CRIKKET_HOST ?? "https://api.crikket.io"}
-      publicKey={publicKey}
-    />
-  )
-}
-```
-
-`CapturePlugin` accepts the same options as `init()`, except it uses `publicKey` instead of `key`.
-
-## Public Key Guidance
-
-- Public keys are safe to ship in client-side code.
-- Restrict each key to the exact origins you own.
-- Rotate or revoke keys from `Settings` -> `Public Keys` if an embed needs to be replaced or disabled.
+- Share the
+  [Chrome Web Store install link](https://chromewebstore.google.com/detail/crikket/pjooelapomplepemjoebeanebffdieic)
+  in onboarding docs.
+- Set a verified domain on your org (in **Settings**) so new teammates
+  auto-join when they sign in with a matching email address.
+- Reports submitted from the extension land in the same workspace dashboard
+  regardless of who captured them.

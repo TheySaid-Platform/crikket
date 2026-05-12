@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import {
   bigint,
   boolean,
@@ -104,8 +104,15 @@ export const organization = pgTable(
     logo: text("logo"),
     createdAt: timestamp("created_at").notNull(),
     metadata: text("metadata"),
+    verifiedDomain: text("verified_domain"),
+    verifiedDomainAt: timestamp("verified_domain_at"),
   },
-  (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)]
+  (table) => [
+    uniqueIndex("organization_slug_uidx").on(table.slug),
+    uniqueIndex("organization_verified_domain_uidx")
+      .on(table.verifiedDomain)
+      .where(sql`${table.verifiedDomain} IS NOT NULL`),
+  ]
 )
 
 export const member = pgTable(

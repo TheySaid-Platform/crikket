@@ -104,7 +104,6 @@
       "version": "0.1.1",
       "dependencies": {
         "@base-ui/react": "catalog:",
-        "@crikket-io/capture": "workspace:*",
         "@crikket/api": "workspace:*",
         "@crikket/auth": "workspace:*",
         "@crikket/env": "workspace:*",
@@ -183,6 +182,7 @@
         "better-auth": "catalog:",
         "dotenv": "catalog:",
         "drizzle-orm": "catalog:",
+        "nanoid": "catalog:",
         "react": "catalog:",
         "resend": "catalog:",
         "zod": "catalog:",
@@ -337,29 +337,6 @@
       "peerDependencies": {
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
-      },
-    },
-    "sdks/capture": {
-      "name": "@crikket-io/capture",
-      "version": "0.1.1",
-      "dependencies": {
-        "@crikket/capture-core": "workspace:*",
-        "@crikket/shared": "workspace:*",
-      },
-      "devDependencies": {
-        "@crikket/config": "workspace:*",
-        "@tailwindcss/postcss": "catalog:",
-        "@types/react": "catalog:",
-        "@types/react-dom": "catalog:",
-        "postcss": "catalog:",
-        "react": "catalog:",
-        "react-dom": "catalog:",
-        "tailwindcss": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": ">=18",
-        "react-dom": ">=18",
       },
     },
   },
@@ -669,8 +646,6 @@
     "@clack/core": ["@clack/core@0.5.0", "", { "dependencies": { "picocolors": "^1.0.0", "sisteransi": "^1.0.5" } }, "sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow=="],
 
     "@clack/prompts": ["@clack/prompts@0.11.0", "", { "dependencies": { "@clack/core": "0.5.0", "picocolors": "^1.0.0", "sisteransi": "^1.0.5" } }, "sha512-pMN5FcrEw9hUkZA4f+zLlzivQSeQf5dRGJjSUbvVYDLvpKCdQx5OaknvKzgbtXOizhP+SJJJjqEbOe55uKKfAw=="],
-
-    "@crikket-io/capture": ["@crikket-io/capture@workspace:sdks/capture"],
 
     "@crikket/api": ["@crikket/api@workspace:packages/api"],
 

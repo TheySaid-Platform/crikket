@@ -1,5 +1,5 @@
 {
-  "title": "Capture SDK",
+  "title": "Capture",
   "defaultOpen": true,
   "pages": ["!index", "quick-start", "integration"]
 }

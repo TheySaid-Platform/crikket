@@ -34,7 +34,7 @@ over their stack.
 - Include reproduction steps, console logs, and network requests automatically
 - Share reports instantly with public or private links
 - Self-host for free or use the hosted app
-- Embed the capture widget in your own product with `@crikket-io/capture`
+- Capture any tab with the Crikket Chrome extension
 
 ## What Makes It Useful
 
@@ -98,23 +98,12 @@ Default local ports:
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full workflow.
 
-## Embed Crikket In Your Product
+## Capture Bugs From Any Tab
 
-Crikket ships an embeddable capture SDK for websites and web apps:
+Install the Crikket Chrome extension to record any open tab — with console
+logs, network requests, and errors attached automatically. The web dashboard
+surfaces an install link, or grab it directly from the Chrome Web Store.
 
-```ts
-import { init } from "@crikket-io/capture"
-
-init({
-  key: "crk_your_public_key",
-  host: "https://api.crikket.io",
-})
-```
-
-That mounts the capture launcher so users can submit screenshot or screen
-recording bug reports without leaving your product.
-
-- [Capture SDK README](./sdks/capture/README.md)
 - [Capture quick start docs](https://crikket.io/docs/usage/quick-start)
 
 ## Monorepo Overview
@@ -127,7 +116,6 @@ Crikket is a Bun + Turborepo monorepo.
 | `apps/server` | Hono API for auth, capture, and backend workflows |
 | `apps/docs` | Marketing site and docs |
 | `apps/extension` | Browser extension app |
-| `sdks/capture` | Embeddable browser capture SDK |
 | `packages/*` | Shared internal packages |
 
 ## Contributing

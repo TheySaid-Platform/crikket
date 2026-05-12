@@ -1,6 +1,5 @@
 "use client"
 
-import { env } from "@crikket/env/web"
 import { ConfirmationDialog } from "@crikket/ui/components/dialogs/confirmation-dialog"
 import { Button } from "@crikket/ui/components/ui/button"
 import {
@@ -11,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from "@crikket/ui/components/ui/dropdown-menu"
 import {
-  Copy,
   Edit3,
   MoreVertical,
   RefreshCcw,
@@ -19,7 +17,6 @@ import {
   Trash2,
 } from "lucide-react"
 import { useState } from "react"
-import { toast } from "sonner"
 
 import type { PublicKeyItem } from "../types"
 
@@ -35,17 +32,6 @@ interface PublicKeyRowActionsProps {
   onRotate: (input: { keyId: string }) => Promise<void>
 }
 
-function buildBundlerSnippet(input: { host: string; key: string }): string {
-  return [
-    'import { init } from "@crikket-io/capture"',
-    "",
-    "init({",
-    `  key: "${input.key}",`,
-    `  host: "${input.host}",`,
-    "})",
-  ].join("\n")
-}
-
 export function PublicKeyRowActions({
   canManage,
   isDeleting,
@@ -59,11 +45,6 @@ export function PublicKeyRowActions({
 }: PublicKeyRowActionsProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isRevokeDialogOpen, setIsRevokeDialogOpen] = useState(false)
-
-  const copyValue = async (value: string, kind: "key" | "snippet") => {
-    await navigator.clipboard.writeText(value)
-    toast.success(kind === "key" ? "Public key copied" : "Embed snippet copied")
-  }
 
   return (
     <>
@@ -81,21 +62,6 @@ export function PublicKeyRowActions({
           <MoreVertical />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem
-            onClick={() =>
-              copyValue(
-                buildBundlerSnippet({
-                  host: env.NEXT_PUBLIC_SERVER_URL,
-                  key: item.key,
-                }),
-                "snippet"
-              )
-            }
-          >
-            <Copy />
-            Copy embed snippet
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => onEdit(item)}>
             <Edit3 />
             Edit details

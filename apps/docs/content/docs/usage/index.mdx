@@ -1,9 +1,10 @@
 ---
 title: Overview
-description: Embed the Crikket Capture SDK into your website with a public key.
+description: Capture bug reports from any tab with the Crikket Chrome extension.
 ---
 
-Use the Capture SDK to add the Crikket bug-report widget directly to your site.
+The Crikket Chrome extension captures bug reports from any open tab with
+screen recording, console logs, network requests, and error traces attached.
 
 ## In This Section
 
@@ -13,15 +14,13 @@ Use the Capture SDK to add the Crikket bug-report widget directly to your site.
 ## What You Need
 
 - A Crikket workspace
-- An org admin or owner who can create public keys
-- A website or app origin you control, such as:
-  - `https://example.com`
-  - `https://www.example.com`
-  - `http://localhost:3000`
+- Chrome or any Chromium-based browser
+- The Crikket Chrome extension installed (from the Web Store or unpacked)
 
 ## How It Works
 
-1. Create a site-scoped public key in Crikket.
-2. Add the exact allowed origins where the widget can run.
-3. Initialize `@crikket-io/capture` in your site.
-4. Users launch the widget, capture a screenshot or screen recording, and submit the report from your app.
+1. Install the extension from the Chrome Web Store.
+2. Sign in once via the extension popup — it reuses your Crikket session.
+3. Press the keyboard shortcut or click the extension to record any tab.
+4. Stop the recording; the report uploads to your workspace with logs and
+   replay context attached.
