@@ -181,6 +181,44 @@ describe("createUploadUrl", () => {
     )
   })
 
+  it("sets cache-control: no-transform on gzipped uploads so GCS does not auto-decompress on read", async () => {
+    const storage = createS3StorageProvider({
+      bucket: "bug-report-bucket",
+      region: "auto",
+      endpoint: "https://storage.googleapis.com",
+      accessKeyId: "access",
+      secretAccessKey: "secret",
+    })
+
+    const upload = await storage.createUploadUrl({
+      filename:
+        "organizations/org_123/bug-reports/br_123/debugger/payload.json.gz",
+      contentType: "application/json",
+      contentEncoding: "gzip",
+    })
+
+    expect(upload.headers["cache-control"]).toBe("no-transform")
+    expect(upload.headers["content-encoding"]).toBe("gzip")
+    expect(upload.headers["content-type"]).toBe("application/json")
+  })
+
+  it("omits cache-control when no content-encoding is set", async () => {
+    const storage = createS3StorageProvider({
+      bucket: "bug-report-bucket",
+      region: "auto",
+      endpoint: "https://storage.googleapis.com",
+      accessKeyId: "access",
+      secretAccessKey: "secret",
+    })
+
+    const upload = await storage.createUploadUrl({
+      filename: "organizations/org_123/bug-reports/br_123/capture/video.webm",
+      contentType: "video/webm",
+    })
+
+    expect(upload.headers["cache-control"]).toBeUndefined()
+  })
+
   it("does not include flexible checksum query params in presigned upload urls", async () => {
     const storage = createS3StorageProvider({
       bucket: "bug-report-bucket",
