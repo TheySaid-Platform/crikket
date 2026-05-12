@@ -17,6 +17,7 @@ import {
 import {
   BookOpen,
   Building2,
+  Chrome,
   CreditCard,
   KeyRound,
   UserRound,
@@ -29,6 +30,9 @@ import type * as React from "react"
 import { TeamSwitcher } from "@/components/team-switcher"
 import { UserNav } from "@/components/user-nav"
 import { getDocsUrl } from "@/lib/site"
+
+const CHROME_EXTENSION_URL =
+  "https://chromewebstore.google.com/detail/crikket/pjooelapomplepemjoebeanebffdieic"
 
 type Organization = typeof authClient.$Infer.Organization
 
@@ -73,8 +77,14 @@ const navSettings = [
 const navSecondary = [
   {
     title: "Documentation",
-    url: "/docs",
     icon: BookOpen,
+    kind: "docs" as const,
+  },
+  {
+    title: "Chrome Extension",
+    icon: Chrome,
+    kind: "external" as const,
+    url: CHROME_EXTENSION_URL,
   },
 ] as const
 
@@ -147,28 +157,31 @@ export function AppSidebar({
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              {navSecondary.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    render={(props) =>
-                      docsUrl ? (
-                        <a
-                          href={docsUrl}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                          {...props}
-                        />
-                      ) : (
-                        <button type="button" {...props} />
-                      )
-                    }
-                    size="sm"
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navSecondary.map((item) => {
+                const href = item.kind === "docs" ? docsUrl : item.url
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      render={(props) =>
+                        href ? (
+                          <a
+                            href={href}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                            {...props}
+                          />
+                        ) : (
+                          <button type="button" {...props} />
+                        )
+                      }
+                      size="sm"
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

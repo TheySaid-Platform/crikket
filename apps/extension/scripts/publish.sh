@@ -39,11 +39,26 @@ if [ -z "${ZIP:-}" ]; then
 fi
 
 echo "==> Uploading $ZIP to extension $CHROME_EXTENSION_ID"
+UPLOAD_OUTPUT="$(mktemp)"
+trap 'rm -f "$UPLOAD_OUTPUT"' EXIT
+
+set +e
 bunx --bun chrome-webstore-upload-cli@3 upload \
   --source "$ZIP" \
   --extension-id "$CHROME_EXTENSION_ID" \
   --client-id "$CHROME_CLIENT_ID" \
   --client-secret "$CHROME_CLIENT_SECRET" \
-  --refresh-token "$CHROME_REFRESH_TOKEN"
+  --refresh-token "$CHROME_REFRESH_TOKEN" 2>&1 | tee "$UPLOAD_OUTPUT"
+UPLOAD_STATUS=${PIPESTATUS[0]}
+set -e
+
+if [ "$UPLOAD_STATUS" -ne 0 ]; then
+  if grep -q "ITEM_NOT_UPDATABLE" "$UPLOAD_OUTPUT"; then
+    echo "==> This version is already uploaded and pending review/ready to publish in the Chrome Web Store; nothing to do."
+    echo "    Publish or discard the existing draft at https://chrome.google.com/webstore/devconsole"
+    exit 0
+  fi
+  exit "$UPLOAD_STATUS"
+fi
 
 echo "==> Uploaded as draft. Publish from https://chrome.google.com/webstore/devconsole"
