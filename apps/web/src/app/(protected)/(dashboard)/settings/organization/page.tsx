@@ -16,6 +16,7 @@ import { client } from "@/utils/orpc"
 import { OrganizationMembersSection } from "../_components/org-members/organization-members-section"
 import { OrganizationDangerZone } from "../_components/organization-danger-zone"
 import { OrganizationSettingsForm } from "../_components/organization-settings-form"
+import { OrganizationVerifiedDomainForm } from "../_components/organization-verified-domain-form"
 import { getRequestErrorMessage } from "../_lib/get-request-error-message"
 import { parseMembersQuery } from "../_lib/members-query"
 
@@ -145,11 +146,19 @@ export default async function OrganizationSettingsPage({
       data: null,
       error,
     }))
+  const verifiedDomainPromise = client.organization
+    .getVerifiedDomain({ organizationId: activeOrganization.id })
+    .then((data) => ({ data, error: null as unknown }))
+    .catch((error) => ({
+      data: { verifiedDomain: null, verifiedDomainAt: null },
+      error,
+    }))
   const [
     { data: memberRoleData },
     { data: membersData, error: membersError },
     { data: invitationData, error: invitationError },
     billingState,
+    verifiedDomainState,
   ] = await Promise.all([
     authClient.organization.getActiveMemberRole({
       query: {
@@ -165,6 +174,7 @@ export default async function OrganizationSettingsPage({
       ...authFetchOptions,
     }),
     billingPromise,
+    verifiedDomainPromise,
   ])
   const currentBillingPlan = billingState.data?.plan ?? "free"
   const memberCap = billingState.data?.entitlements.memberCap ?? null
@@ -212,6 +222,22 @@ export default async function OrganizationSettingsPage({
           <OrganizationSettingsForm
             initialName={activeOrganization.name}
             initialSlug={activeOrganization.slug}
+            organizationId={activeOrganization.id}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Verified Domain</CardTitle>
+          <CardDescription>
+            Auto-join new sign-ins whose email matches your domain.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OrganizationVerifiedDomainForm
+            canManage={(memberRoleData?.role ?? "member") === "owner"}
+            initialDomain={verifiedDomainState.data.verifiedDomain}
             organizationId={activeOrganization.id}
           />
         </CardContent>

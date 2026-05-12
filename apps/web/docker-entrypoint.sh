@@ -69,7 +69,6 @@ main() {
   require_env NEXT_PUBLIC_APP_URL
   require_env NEXT_PUBLIC_SERVER_URL
 
-  : "${NEXT_PUBLIC_CRIKKET_KEY:=}"
   : "${NEXT_PUBLIC_DEMO_URL:=}"
   : "${NEXT_PUBLIC_POSTHOG_KEY:=}"
   : "${NEXT_PUBLIC_POSTHOG_HOST:=}"
@@ -79,7 +78,6 @@ main() {
   replace_url_placeholder "https://__CRIKKET_SITE_URL__" "$NEXT_PUBLIC_SITE_URL"
   replace_url_placeholder "https://__CRIKKET_APP_URL__" "$NEXT_PUBLIC_APP_URL"
   replace_url_placeholder "https://__CRIKKET_SERVER_URL__" "$NEXT_PUBLIC_SERVER_URL"
-  replace_placeholder "__CRIKKET_CAPTURE_KEY__" "$NEXT_PUBLIC_CRIKKET_KEY"
   replace_url_placeholder "https://__CRIKKET_DEMO_URL__" "$NEXT_PUBLIC_DEMO_URL"
   replace_placeholder "__CRIKKET_POSTHOG_KEY__" "$NEXT_PUBLIC_POSTHOG_KEY"
   replace_url_placeholder "https://__CRIKKET_POSTHOG_HOST__" "$NEXT_PUBLIC_POSTHOG_HOST"

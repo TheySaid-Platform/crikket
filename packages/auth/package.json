@@ -34,6 +34,7 @@
     "drizzle-orm": "catalog:",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
+    "nanoid": "catalog:",
     "react": "catalog:",
     "resend": "catalog:",
     "zod": "catalog:"

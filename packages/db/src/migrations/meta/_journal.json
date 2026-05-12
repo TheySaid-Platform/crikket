@@ -8,6 +8,13 @@
       "when": 1772496592578,
       "tag": "0000_tidy_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778550988456,
+      "tag": "0001_illegal_hedge_knight",
+      "breakpoints": true
     }
   ]
 }
