@@ -3,7 +3,20 @@ import "@crikket/ui/styles/globals.css"
 import { siteConfig } from "@crikket/shared/config/site"
 import { RootProvider } from "fumadocs-ui/provider/next"
 import type { Metadata } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
 import type { ReactNode } from "react"
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+})
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+})
 
 export const metadata: Metadata = {
   metadataBase: new URL(env.NEXT_PUBLIC_SITE_URL),
@@ -47,7 +60,11 @@ export const metadata: Metadata = {
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <html className="scroll-smooth" lang="en" suppressHydrationWarning>
+    <html
+      className={`scroll-smooth ${geistSans.variable} ${geistMono.variable}`}
+      lang="en"
+      suppressHydrationWarning
+    >
       <body className="flex min-h-screen flex-col">
         <RootProvider>{children}</RootProvider>
       </body>

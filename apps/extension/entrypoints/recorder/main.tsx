@@ -1,3 +1,5 @@
+import "@fontsource-variable/geist"
+import "@fontsource-variable/geist-mono"
 import "@crikket/ui/styles/globals.css"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import React from "react"
