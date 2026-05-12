@@ -1,7 +1,8 @@
 "use client"
 
-import { Button } from "@crikket/ui/components/ui/button"
-import { Loader2, Play } from "lucide-react"
+import { Button, buttonVariants } from "@crikket/ui/components/ui/button"
+import { cn } from "@crikket/ui/lib/utils"
+import { Chrome, Loader2, Play } from "lucide-react"
 
 import { SelectionActionBar } from "@/components/selection-action-bar"
 import { useBugReportsActions } from "../../_hooks/use-bug-reports-actions"
@@ -119,9 +120,20 @@ export function BugReportsList() {
             <p className="mt-2 text-muted-foreground text-sm">
               {filtersState.hasActiveFilters
                 ? "Try adjusting your search or filters."
-                : "Start reporting bugs to see them here."}
+                : "Install the Chrome extension to start reporting bugs."}
             </p>
           </div>
+          {filtersState.hasActiveFilters ? null : (
+            <a
+              className={cn(buttonVariants(), "mt-2")}
+              href="https://chromewebstore.google.com/detail/crikket/pjooelapomplepemjoebeanebffdieic"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              <Chrome />
+              Install the Chrome Extension
+            </a>
+          )}
         </div>
       ) : null}
 
