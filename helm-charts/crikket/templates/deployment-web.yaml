@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}-web
+  labels:
+    app: {{ .Values.name }}
+    component: web
+spec:
+  replicas: {{ .Values.web.replicaCount.min }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+      component: web
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        component: web
+    spec:
+      nodeSelector:
+        cloud.google.com/compute-class: two-zone
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.name }}
+                    component: web
+                topologyKey: kubernetes.io/hostname
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.name }}
+                    component: web
+                topologyKey: topology.kubernetes.io/zone
+      terminationGracePeriodSeconds: {{ .Values.gracefulShutdown.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ .Values.name }}-web
+          image: "{{ .Values.web.image }}:{{ .Values.web.imageTag }}"
+          # Upstream `apps/web/docker-entrypoint.sh` substitutes runtime env via
+          # `sed s/KEY:...env.KEY/KEY:"value"/`, which misses Next.js build-time
+          # inlined values like `KEY:"false"`. Pre-patch the template chunks
+          # before the entrypoint copies them into `.next` so substitutions
+          # land on every restart.
+          #
+          # Patches applied (gated on env vars so each is reversible without a
+          # chart edit — flip the env var off and pods serve the upstream UI):
+          #
+          #   1. NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true → flip the inlined `"false"`
+          #      to `"true"` so the Google sign-in button renders.
+          #   2. CRIKKET_HIDE_EMAIL_AUTH_UI=true → wrap the email/password form
+          #      JSX and the "Don't have an account? Sign up" paragraph with
+          #      `!1&&` so React renders nothing for them, and blank out the
+          #      "Or continue with email" divider text. Result: /login shows the
+          #      Google button only. Server-side email/password endpoints stay
+          #      enabled (`enabled: true` is hardcoded in crikket source) so
+          #      this is UI-only — combine with `disableSignUp` in a fork if
+          #      you need server-side enforcement.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              T=/app/apps/web/.next-template
+              if [ "${NEXT_PUBLIC_GOOGLE_AUTH_ENABLED:-false}" = "true" ]; then
+                find $T/static/chunks -name '*.js' -exec \
+                  sed -i 's|NEXT_PUBLIC_GOOGLE_AUTH_ENABLED:"false"|NEXT_PUBLIC_GOOGLE_AUTH_ENABLED:"true"|g' {} +
+              fi
+              if [ "${CRIKKET_HIDE_EMAIL_AUTH_UI:-false}" = "true" ]; then
+                # Minifier var differs across chunks (b. server SSR, t. client
+                # static), so use a regex char class to match either.
+                for D in $T/server/chunks/ssr $T/static/chunks; do
+                  find $D -name '*.js' -exec sed -E -i \
+                    's|\(0,([a-zA-Z])\.jsxs\)\("form",\{className:"grid gap-4"|!1\&\&(0,\1.jsxs)("form",{className:"grid gap-4"|g' {} +
+                  find $D -name '*.js' -exec sed -E -i \
+                    "s|\(0,([a-zA-Z])\.jsxs\)\(\"p\",\{className:\"text-center text-muted-foreground text-sm\",children:\\[\"Don.t have an account|!1\&\&(0,\1.jsxs)(\"p\",{className:\"text-center text-muted-foreground text-sm\",children:[\"Don't have an account|g" {} +
+                  find $D -name '*.js' -exec sed -i 's|"Or continue with email"|""|g' {} +
+                done
+              fi
+              exec /app/apps/web/docker-entrypoint.sh bun run --cwd apps/web start -- --port {{ .Values.web.port }} --hostname 0.0.0.0
+          ports:
+            - containerPort: {{ .Values.web.port }}
+              name: http
+          envFrom:
+            - secretRef:
+                name: {{ .Values.env.secretRef.name }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            {{- if ne $key "secretRef" }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          # Next.js SSR of `/` fetches NEXT_PUBLIC_SERVER_URL/api/auth/get-session,
+          # which loops back through the public LB. Probing the page therefore
+          # depends on the LB being wired. Use tcpSocket here so the pod is Ready
+          # as soon as Next.js binds the port — readiness on the LB side is a
+          # separate health check on the backend service.
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.web.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 24
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.web.port }}
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.web.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ .Values.gracefulShutdown.preStopSleepSeconds }}"]
