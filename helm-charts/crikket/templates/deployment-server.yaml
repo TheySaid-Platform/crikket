@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}-server
+  labels:
+    app: {{ .Values.name }}
+    component: server
+spec:
+  replicas: {{ .Values.server.replicaCount.min }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+      component: server
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        component: server
+    spec:
+      nodeSelector:
+        cloud.google.com/compute-class: two-zone
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.name }}
+                    component: server
+                topologyKey: kubernetes.io/hostname
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.name }}
+                    component: server
+                topologyKey: topology.kubernetes.io/zone
+      terminationGracePeriodSeconds: {{ .Values.gracefulShutdown.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ .Values.name }}-server
+          image: "{{ .Values.server.image }}:{{ .Values.server.imageTag }}"
+          ports:
+            - containerPort: {{ .Values.server.port }}
+              name: http
+          envFrom:
+            - secretRef:
+                name: {{ .Values.env.secretRef.name }}
+          env:
+            - name: PORT
+              value: {{ .Values.server.port | quote }}
+            {{- range $key, $value := .Values.env }}
+            {{- if ne $key "secretRef" }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.server.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 24
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.server.port }}
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.server.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ .Values.gracefulShutdown.preStopSleepSeconds }}"]

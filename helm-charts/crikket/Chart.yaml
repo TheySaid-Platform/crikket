@@ -1,0 +1,6 @@
+apiVersion: v2
+name: crikket
+description: A Helm chart for deploying Crikket (open-source bug reporting) — server (Hono API) + web (Next.js dashboard) + post-install migration Job
+type: application
+version: 0.1.0
+appVersion: "0.1.3"

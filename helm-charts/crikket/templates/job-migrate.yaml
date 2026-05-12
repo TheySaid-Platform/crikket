@@ -1,0 +1,39 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-migrate
+  labels:
+    app: {{ .Values.name }}
+    component: migrate
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+        component: migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ .Values.server.image }}:{{ .Values.server.imageTag }}"
+          command: ["bun", "run", "--filter", "@crikket/db", "db:migrate"]
+          envFrom:
+            - secretRef:
+                name: {{ .Values.env.secretRef.name }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            {{- if ne $key "secretRef" }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+{{- end }}

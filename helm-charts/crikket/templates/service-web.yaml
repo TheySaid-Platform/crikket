@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}-web
+  labels:
+    app: {{ .Values.name }}
+    component: web
+  {{- if .Values.service.annotations.enabled }}
+  annotations:
+    cloud.google.com/neg: '{"exposed_ports": {"{{ .Values.web.port }}":{}}}'
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.web.port }}
+      targetPort: {{ .Values.web.port }}
+      protocol: TCP
+      name: http
+  selector:
+    app: {{ .Values.name }}
+    component: web
