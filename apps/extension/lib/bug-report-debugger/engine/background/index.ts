@@ -12,6 +12,7 @@ import type { DebuggerRuntimeResponse } from "@crikket/capture-core/debugger/typ
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { isDebuggerRuntimeMessage } from "../../messaging"
 import { createDebuggerSessionStore } from "./session-store"
+import { registerWebRequestCollector } from "./web-request-collector"
 
 export function registerDebuggerBackgroundListeners(): void {
   const scope = globalThis as typeof globalThis & {
@@ -25,6 +26,18 @@ export function registerDebuggerBackgroundListeners(): void {
   scope[BACKGROUND_LISTENER_FLAG] = true
 
   const store = createDebuggerSessionStore()
+
+  registerWebRequestCollector({
+    onNetworkEvent: (tabId, event) => {
+      store.appendPageEvents(tabId, [event]).catch((error: unknown) => {
+        reportNonFatalError(
+          `Failed to append webRequest event for tab ${tabId}`,
+          error
+        )
+      })
+    },
+    reportError: reportNonFatalError,
+  })
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isDebuggerRuntimeMessage(message)) {
