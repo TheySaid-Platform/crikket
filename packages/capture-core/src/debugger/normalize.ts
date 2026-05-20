@@ -132,8 +132,35 @@ function sanitizeHeaders(value: unknown): Record<string, string> | undefined {
   return Object.keys(result).length > 0 ? result : undefined
 }
 
+const SENSITIVE_HEADER_PATTERNS = [
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "pwd",
+  "session",
+  "api-key",
+  "apikey",
+  "x-api-key",
+  "refresh-token",
+  "refresh_token",
+  "access-token",
+  "access_token",
+  "id-token",
+  "id_token",
+  "client-secret",
+  "client_secret",
+] as const
+
 function shouldHideHeader(headerName: string): boolean {
-  return headerName.includes("debugger")
+  if (headerName.includes("debugger")) return true
+
+  return SENSITIVE_HEADER_PATTERNS.some((pattern) =>
+    headerName.includes(pattern)
+  )
 }
 
 function sanitizeRecord(value: unknown): Record<string, unknown> | undefined {

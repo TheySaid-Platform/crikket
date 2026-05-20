@@ -7,7 +7,7 @@ import {
 } from "../src/debugger/normalize"
 
 describe("debugger normalization regression", () => {
-  it("sanitizes network events and strips debugger headers", () => {
+  it("sanitizes network events and strips debugger and sensitive headers", () => {
     const event = normalizeDebuggerEvent({
       kind: "network",
       timestamp: 1234.9,
@@ -17,10 +17,13 @@ describe("debugger normalization regression", () => {
       duration: 456.9,
       requestHeaders: {
         Authorization: "Bearer token",
+        Cookie: "sid=abc",
         "X-Debugger-Trace": "remove-me",
+        "X-Request-Id": "keep-me",
       },
       responseHeaders: {
         "Content-Type": "application/json",
+        "Set-Cookie": "sid=xyz",
       },
       requestBody: "x".repeat(5000),
       responseBody: "y".repeat(5000),
@@ -34,7 +37,7 @@ describe("debugger normalization regression", () => {
       status: 201,
       duration: 456,
       requestHeaders: {
-        authorization: "Bearer token",
+        "x-request-id": "keep-me",
       },
       responseHeaders: {
         "content-type": "application/json",

@@ -3,7 +3,6 @@ import { installConsoleCapture } from "./console"
 import { INSTALL_FLAG } from "./constants"
 import { createPageDiagnostics } from "./diagnostics"
 import { createEventQueue } from "./event-queue"
-import { installNetworkCapture } from "./network"
 import { createStringifyValue } from "./serializer"
 import type { ConsoleLevel } from "./types"
 import { createNonFatalReporter, truncate } from "./utils"
@@ -60,24 +59,6 @@ export function installDebuggerPageRuntime(): void {
     })
   }
 
-  const postNetwork = (payload: {
-    method: string
-    url: string
-    status?: number
-    duration?: number
-    requestHeaders?: Record<string, string>
-    responseHeaders?: Record<string, string>
-    requestBody?: string
-    responseBody?: string
-  }) => {
-    diagnostics.recordNetworkEvent(payload.url)
-    enqueueEvent({
-      kind: "network",
-      timestamp: Date.now(),
-      ...payload,
-    })
-  }
-
   installActionAndNavigationCapture({
     postAction,
   })
@@ -86,19 +67,6 @@ export function installDebuggerPageRuntime(): void {
     reporter,
     postConsole,
   })
-
-  try {
-    installNetworkCapture({
-      diagnostics,
-      reporter,
-      postNetwork,
-    })
-  } catch (error) {
-    reporter.reportNonFatalError(
-      "Failed to install network capture in debugger runtime",
-      error
-    )
-  }
 
   const flushOnPageHide = () => {
     flushEventQueue()
