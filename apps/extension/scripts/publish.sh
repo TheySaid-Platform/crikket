@@ -7,6 +7,16 @@
 #   CHROME_CLIENT_SECRET   OAuth 2.0 client secret.
 #   CHROME_REFRESH_TOKEN   OAuth 2.0 refresh token authorized for the publisher account.
 #
+# Optional env vars:
+#   CHROME_AUTO_PUBLISH    When "true", automatically submit the uploaded draft
+#                          for Chrome Web Store review instead of leaving it as a
+#                          draft. NOTE: this does not skip Google's review; it
+#                          only removes the manual "Publish" click in the dev
+#                          console. The item still goes live only after review.
+#   CHROME_TRUSTED_TESTERS When "true", publish to trusted testers (private)
+#                          rather than to everyone. Only used when
+#                          CHROME_AUTO_PUBLISH=true. Defaults to false.
+#
 # See https://github.com/fregante/chrome-webstore-upload-cli for how to obtain these.
 
 set -euo pipefail
@@ -61,4 +71,26 @@ if [ "$UPLOAD_STATUS" -ne 0 ]; then
   exit "$UPLOAD_STATUS"
 fi
 
-echo "==> Uploaded as draft. Publish from https://chrome.google.com/webstore/devconsole"
+if [ "${CHROME_AUTO_PUBLISH:-false}" != "true" ]; then
+  echo "==> Uploaded as draft. Publish from https://chrome.google.com/webstore/devconsole"
+  echo "    (set CHROME_AUTO_PUBLISH=true to auto-submit for review from CI)"
+  exit 0
+fi
+
+PUBLISH_ARGS=(
+  publish
+  --extension-id "$CHROME_EXTENSION_ID"
+  --client-id "$CHROME_CLIENT_ID"
+  --client-secret "$CHROME_CLIENT_SECRET"
+  --refresh-token "$CHROME_REFRESH_TOKEN"
+)
+if [ "${CHROME_TRUSTED_TESTERS:-false}" = "true" ]; then
+  echo "==> Submitting for review (trusted testers / private)"
+  PUBLISH_ARGS+=(--trusted-testers)
+else
+  echo "==> Submitting for review (default / everyone)"
+fi
+
+bunx --bun chrome-webstore-upload-cli@3 "${PUBLISH_ARGS[@]}"
+
+echo "==> Submitted for review. It goes live automatically once Google approves."
