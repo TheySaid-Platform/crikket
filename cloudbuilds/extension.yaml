@@ -46,5 +46,9 @@ steps:
         printf '%s\n' "$$CRIKKET_SECRETS_EXTENSION" > .env
         printf '%s\n' "VITE_APP_URL=https://crikket.dev.theysaid.io" >> .env
         printf '%s\n' "VITE_SERVER_URL=https://crikket.dev.theysaid.io" >> .env
+        # Auto-submit the uploaded version for Chrome Web Store review instead
+        # of leaving it as a draft. This removes the manual "Publish" click; it
+        # does NOT skip Google's review (the item goes live once approved).
+        export CHROME_AUTO_PUBLISH=true
         bun run publish:chrome
     secretEnv: ["CRIKKET_SECRETS_EXTENSION"]
