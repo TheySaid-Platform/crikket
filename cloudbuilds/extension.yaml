@@ -59,6 +59,10 @@ steps:
         # of leaving it as a draft. This removes the manual "Publish" click; it
         # does NOT skip Google's review (the item goes live once approved).
         export CHROME_AUTO_PUBLISH=true
+        # The store item is distributed to trusted testers (private). Publishing
+        # to the default "everyone" target is rejected as a visibility change, so
+        # submit to trusted testers to match the current distribution.
+        export CHROME_TRUSTED_TESTERS=true
         # Publisher id (from a trigger substitution) so publish.sh can auto-cancel
         # a stuck pending review and re-upload the new version.
         export CHROME_PUBLISHER_ID="${_CHROME_PUBLISHER_ID}"
