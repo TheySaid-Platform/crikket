@@ -9,6 +9,9 @@
 #     CHROME_CLIENT_ID=...
 #     CHROME_CLIENT_SECRET=...
 #     CHROME_REFRESH_TOKEN=...
+#     CHROME_PUBLISHER_ID=...   # numeric publisher id from the dev console URL;
+#                               # enables auto-cancelling a stuck pending review
+#                               # so a new version can be uploaded (see publish.sh)
 #
 # The Cloud Build service account needs roles/secretmanager.secretAccessor on
 # the secret above.
