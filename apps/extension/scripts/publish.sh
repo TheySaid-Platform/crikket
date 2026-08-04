@@ -16,8 +16,21 @@
 #   CHROME_TRUSTED_TESTERS When "true", publish to trusted testers (private)
 #                          rather than to everyone. Only used when
 #                          CHROME_AUTO_PUBLISH=true. Defaults to false.
+#   CHROME_PUBLISHER_ID    Numeric publisher ID of the Chrome Web Store developer
+#                          account (visible in the dev console URL:
+#                          https://chrome.google.com/webstore/devconsole/<PUBLISHER_ID>).
+#                          When set, an ITEM_NOT_UPDATABLE error caused by a
+#                          previous submission stuck "in review" is handled
+#                          automatically: the pending review is cancelled via the
+#                          Chrome Web Store API v2 (publishers.items.cancelSubmission)
+#                          and the upload is retried. Without it, the script falls
+#                          back to a no-op and the release must be unblocked
+#                          manually in the dev console.
 #
-# See https://github.com/fregante/chrome-webstore-upload-cli for how to obtain these.
+# See https://github.com/fregante/chrome-webstore-upload-cli for how to obtain
+# the OAuth keys, and
+# https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/cancelSubmission
+# for the cancel-review API.
 
 set -euo pipefail
 
@@ -48,27 +61,60 @@ if [ -z "${ZIP:-}" ]; then
   exit 1
 fi
 
-echo "==> Uploading $ZIP to extension $CHROME_EXTENSION_ID"
+# Cancel a pending review via the Chrome Web Store API v2 so a new version can be
+# uploaded. Returns 0 on success. Requires CHROME_PUBLISHER_ID.
+#
+# Implemented with `bun` (native fetch) because the CI image ships neither curl
+# nor python3.
+cancel_pending_review() {
+  if [ -z "${CHROME_PUBLISHER_ID:-}" ]; then
+    return 1
+  fi
+  CHROME_CLIENT_ID="$CHROME_CLIENT_ID" \
+  CHROME_CLIENT_SECRET="$CHROME_CLIENT_SECRET" \
+  CHROME_REFRESH_TOKEN="$CHROME_REFRESH_TOKEN" \
+  CHROME_PUBLISHER_ID="$CHROME_PUBLISHER_ID" \
+  CHROME_EXTENSION_ID="$CHROME_EXTENSION_ID" \
+  bun run "$SCRIPT_DIR/cancel-review.ts"
+}
+
+# Upload the built zip. Echoes CLI output to stdout and to $UPLOAD_OUTPUT;
+# sets UPLOAD_STATUS to the CLI exit code.
 UPLOAD_OUTPUT="$(mktemp)"
 trap 'rm -f "$UPLOAD_OUTPUT"' EXIT
+do_upload() {
+  echo "==> Uploading $ZIP to extension $CHROME_EXTENSION_ID"
+  set +e
+  bunx --bun chrome-webstore-upload-cli@3 upload \
+    --source "$ZIP" \
+    --extension-id "$CHROME_EXTENSION_ID" \
+    --client-id "$CHROME_CLIENT_ID" \
+    --client-secret "$CHROME_CLIENT_SECRET" \
+    --refresh-token "$CHROME_REFRESH_TOKEN" 2>&1 | tee "$UPLOAD_OUTPUT"
+  UPLOAD_STATUS=${PIPESTATUS[0]}
+  set -e
+}
 
-set +e
-bunx --bun chrome-webstore-upload-cli@3 upload \
-  --source "$ZIP" \
-  --extension-id "$CHROME_EXTENSION_ID" \
-  --client-id "$CHROME_CLIENT_ID" \
-  --client-secret "$CHROME_CLIENT_SECRET" \
-  --refresh-token "$CHROME_REFRESH_TOKEN" 2>&1 | tee "$UPLOAD_OUTPUT"
-UPLOAD_STATUS=${PIPESTATUS[0]}
-set -e
+do_upload
 
 if [ "$UPLOAD_STATUS" -ne 0 ]; then
   if grep -q "ITEM_NOT_UPDATABLE" "$UPLOAD_OUTPUT"; then
-    echo "==> This version is already uploaded and pending review/ready to publish in the Chrome Web Store; nothing to do."
-    echo "    Publish or discard the existing draft at https://chrome.google.com/webstore/devconsole"
-    exit 0
+    echo "==> Upload blocked (ITEM_NOT_UPDATABLE): a previous submission is in review / ready to publish."
+    if cancel_pending_review; then
+      echo "==> Cancelled the pending review; retrying upload."
+      do_upload
+      if [ "$UPLOAD_STATUS" -ne 0 ]; then
+        echo "ERROR: upload still failed after cancelling the pending review." >&2
+        exit "$UPLOAD_STATUS"
+      fi
+    else
+      echo "==> Could not auto-cancel the pending review (set CHROME_PUBLISHER_ID to enable this)."
+      echo "    Cancel or publish the existing submission at https://chrome.google.com/webstore/devconsole"
+      exit 0
+    fi
+  else
+    exit "$UPLOAD_STATUS"
   fi
-  exit "$UPLOAD_STATUS"
 fi
 
 if [ "${CHROME_AUTO_PUBLISH:-false}" != "true" ]; then

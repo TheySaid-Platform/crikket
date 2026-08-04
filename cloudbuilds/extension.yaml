@@ -12,11 +12,20 @@
 #
 # The Cloud Build service account needs roles/secretmanager.secretAccessor on
 # the secret above.
+#
+# Substitution _CHROME_PUBLISHER_ID: the publisher id from the dev console URL
+# (https://chrome.google.com/webstore/devconsole/<PUBLISHER_ID>). It enables
+# publish.sh to auto-cancel a stuck pending review so a new version can be
+# uploaded. Set it on the crikket-extension trigger; the value below is only a
+# fallback default.
 
 availableSecrets:
   secretManager:
     - versionName: projects/${PROJECT_ID}/secrets/crikket-secrets-extension/versions/latest
       env: CRIKKET_SECRETS_EXTENSION
+
+substitutions:
+  _CHROME_PUBLISHER_ID: "94697c6b-df24-4909-abf4-241e13b5fc07"
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -50,5 +59,8 @@ steps:
         # of leaving it as a draft. This removes the manual "Publish" click; it
         # does NOT skip Google's review (the item goes live once approved).
         export CHROME_AUTO_PUBLISH=true
+        # Publisher id (from a trigger substitution) so publish.sh can auto-cancel
+        # a stuck pending review and re-upload the new version.
+        export CHROME_PUBLISHER_ID="${_CHROME_PUBLISHER_ID}"
         bun run publish:chrome
     secretEnv: ["CRIKKET_SECRETS_EXTENSION"]
