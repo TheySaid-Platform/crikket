@@ -6,6 +6,7 @@ const URL_FILTER: chrome.webRequest.RequestFilter = {
 
 const MAX_REQUEST_BODY_LENGTH = 4000
 const MAX_PENDING_REQUESTS = 500
+const PENDING_STORAGE_KEY = "crikketDebuggerPendingRequests"
 
 interface PendingRequest {
   tabId: number
@@ -21,6 +22,14 @@ interface CollectorInput {
   reportError: (context: string, error: unknown) => void
 }
 
+// The MV3 background service worker is terminated when idle (~30s), which wipes
+// any in-memory state. Because a request is tracked across two events
+// (onBeforeRequest -> onCompleted/onErrorOccurred), an in-memory-only map loses
+// entries whenever the worker restarts mid-request, silently dropping the
+// completed request. To avoid that, the pending map is mirrored to
+// chrome.storage.session (in-memory across worker restarts within a browser
+// session) and, as a last resort, the completion is emitted from the completion
+// event's own fields so a request is never dropped entirely.
 export function registerWebRequestCollector(input: CollectorInput): void {
   if (!chrome.webRequest) {
     return
@@ -28,6 +37,40 @@ export function registerWebRequestCollector(input: CollectorInput): void {
 
   const { onNetworkEvent, reportError } = input
   const pending = new Map<string, PendingRequest>()
+  const sessionStorage = chrome.storage?.session
+
+  const persistPending = () => {
+    if (!sessionStorage) return
+    const snapshot: Record<string, PendingRequest> = {}
+    for (const [key, value] of pending) {
+      snapshot[key] = value
+    }
+    sessionStorage.set({ [PENDING_STORAGE_KEY]: snapshot }).catch((error) => {
+      reportError("Failed to persist pending webRequest map", error)
+    })
+  }
+
+  const hydratePending = async () => {
+    if (!sessionStorage) return
+    try {
+      const stored = await sessionStorage.get(PENDING_STORAGE_KEY)
+      const snapshot = stored[PENDING_STORAGE_KEY] as
+        | Record<string, PendingRequest>
+        | undefined
+      if (!snapshot) return
+      for (const [key, value] of Object.entries(snapshot)) {
+        if (!pending.has(key)) {
+          pending.set(key, value)
+        }
+      }
+    } catch (error) {
+      reportError("Failed to hydrate pending webRequest map", error)
+    }
+  }
+
+  // Kick off hydration once at startup so entries stored before a worker
+  // restart are available to the completion handlers.
+  const hydrated = hydratePending()
 
   const evictOldestIfFull = () => {
     if (pending.size < MAX_PENDING_REQUESTS) {
@@ -48,6 +91,23 @@ export function registerWebRequestCollector(input: CollectorInput): void {
     }
   }
 
+  // Resolve a pending entry, falling back to storage.session if the in-memory
+  // map was wiped by a worker restart.
+  const takePending = async (
+    requestId: string
+  ): Promise<PendingRequest | undefined> => {
+    let entry = pending.get(requestId)
+    if (!entry) {
+      await hydrated
+      entry = pending.get(requestId)
+    }
+    if (entry) {
+      pending.delete(requestId)
+      persistPending()
+    }
+    return entry
+  }
+
   chrome.webRequest.onBeforeRequest.addListener(
     (details): undefined => {
       if (details.tabId < 0) return undefined
@@ -62,6 +122,7 @@ export function registerWebRequestCollector(input: CollectorInput): void {
         requestHeaders: {},
         requestBody: summarizeRequestBody(details.requestBody),
       })
+      persistPending()
 
       return undefined
     },
@@ -76,6 +137,7 @@ export function registerWebRequestCollector(input: CollectorInput): void {
 
       if (details.requestHeaders) {
         entry.requestHeaders = headersArrayToRecord(details.requestHeaders)
+        persistPending()
       }
     },
     URL_FILTER,
@@ -84,51 +146,66 @@ export function registerWebRequestCollector(input: CollectorInput): void {
 
   chrome.webRequest.onCompleted.addListener(
     (details) => {
-      const entry = pending.get(details.requestId)
-      pending.delete(details.requestId)
-      if (!entry) return
+      if (details.tabId < 0) return
 
-      emit(
-        {
-          kind: "network",
-          timestamp: Math.floor(entry.startedAt),
-          method: entry.method,
-          url: entry.url,
-          status: details.statusCode,
-          duration: Math.max(
-            0,
-            Math.floor(details.timeStamp - entry.startedAt)
-          ),
-          requestHeaders: entry.requestHeaders,
-          responseHeaders: headersArrayToRecord(details.responseHeaders),
-          requestBody: entry.requestBody,
-        },
-        entry.tabId
-      )
+      takePending(details.requestId)
+        .then((entry) => {
+          emit(
+            {
+              kind: "network",
+              timestamp: Math.floor(entry?.startedAt ?? details.timeStamp),
+              method: entry?.method ?? details.method,
+              url: entry?.url ?? details.url,
+              status: details.statusCode,
+              duration: Math.max(
+                0,
+                Math.floor(
+                  details.timeStamp - (entry?.startedAt ?? details.timeStamp)
+                )
+              ),
+              requestHeaders: entry?.requestHeaders,
+              responseHeaders: headersArrayToRecord(details.responseHeaders),
+              requestBody: entry?.requestBody,
+            },
+            entry?.tabId ?? details.tabId
+          )
+        })
+        .catch((error) => {
+          reportError("Failed to finalize completed webRequest", error)
+        })
     },
     URL_FILTER,
     ["responseHeaders"]
   )
 
   chrome.webRequest.onErrorOccurred.addListener((details) => {
-    const entry = pending.get(details.requestId)
-    pending.delete(details.requestId)
-    if (!entry) return
+    if (details.tabId < 0) return
 
-    emit(
-      {
-        kind: "network",
-        timestamp: Math.floor(entry.startedAt),
-        method: entry.method,
-        url: entry.url,
-        status: 0,
-        duration: Math.max(0, Math.floor(details.timeStamp - entry.startedAt)),
-        requestHeaders: entry.requestHeaders,
-        requestBody: entry.requestBody,
-        responseBody: details.error,
-      },
-      entry.tabId
-    )
+    takePending(details.requestId)
+      .then((entry) => {
+        emit(
+          {
+            kind: "network",
+            timestamp: Math.floor(entry?.startedAt ?? details.timeStamp),
+            method: entry?.method ?? details.method,
+            url: entry?.url ?? details.url,
+            status: 0,
+            duration: Math.max(
+              0,
+              Math.floor(
+                details.timeStamp - (entry?.startedAt ?? details.timeStamp)
+              )
+            ),
+            requestHeaders: entry?.requestHeaders,
+            requestBody: entry?.requestBody,
+            responseBody: details.error,
+          },
+          entry?.tabId ?? details.tabId
+        )
+      })
+      .catch((error) => {
+        reportError("Failed to finalize errored webRequest", error)
+      })
   }, URL_FILTER)
 }
 
