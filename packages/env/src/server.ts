@@ -56,7 +56,7 @@ export const env = createEnv({
     TURNSTILE_SITE_KEY: z.string().min(1).optional(),
     TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
     NODE_ENV: z
-      .enum(["development", "production", "staging"])
+      .enum(["development", "production", "staging", "test"])
       .default("development"),
   },
   runtimeEnv: process.env,

@@ -49,6 +49,10 @@ mock.module("@crikket/db", () => ({
 
 mock.module("@crikket/shared/lib/errors", () => ({
   reportNonFatalError: () => undefined,
+  isErrorWithCode: (error: unknown, code: string) =>
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === code,
 }))
 
 let createS3StorageProvider: typeof import("../src/lib/storage").createS3StorageProvider
