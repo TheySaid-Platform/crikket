@@ -312,11 +312,11 @@ export async function persistBugReportDebuggerData(
           actions.map((action) => ({
             id: nanoid(16),
             bugReportId,
-            type: action.type,
-            target: action.target,
+            type: sanitizeDebuggerText(action.type),
+            target: sanitizeDebuggerText(action.target),
             timestamp: new Date(action.timestamp),
             offset: normalizeOffset(action.offset),
-            metadata: action.metadata,
+            metadata: sanitizeDebuggerMetadata(action.metadata),
           }))
         )
       })
@@ -338,10 +338,10 @@ export async function persistBugReportDebuggerData(
             id: nanoid(16),
             bugReportId,
             level: log.level,
-            message: log.message,
+            message: sanitizeDebuggerText(log.message),
             timestamp: new Date(log.timestamp),
             offset: normalizeOffset(log.offset),
-            metadata: log.metadata,
+            metadata: sanitizeDebuggerMetadata(log.metadata),
           }))
         )
       })
@@ -362,14 +362,14 @@ export async function persistBugReportDebuggerData(
           networkRequests.map((request) => ({
             id: nanoid(16),
             bugReportId,
-            method: request.method,
-            url: request.url,
+            method: sanitizeDebuggerText(request.method),
+            url: sanitizeDebuggerText(request.url),
             status: request.status ?? null,
             duration: request.duration ?? null,
             requestHeaders: request.requestHeaders,
             responseHeaders: request.responseHeaders,
-            requestBody: request.requestBody,
-            responseBody: request.responseBody,
+            requestBody: sanitizeDebuggerText(request.requestBody),
+            responseBody: sanitizeDebuggerText(request.responseBody),
             timestamp: new Date(request.timestamp),
             offset: normalizeOffset(request.offset),
           }))
@@ -441,6 +441,54 @@ export async function getBugReportDebuggerEventsData(
       metadata: asUnknownRecord(log.metadata),
     })),
   }
+}
+
+function sanitizeDebuggerText(value: string): string
+function sanitizeDebuggerText(value: string | null | undefined): string | null
+function sanitizeDebuggerText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return value ?? null
+  }
+
+  return value.replaceAll("\0", "")
+}
+
+function sanitizeDebuggerMetadata(
+  value: unknown
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const result: Record<string, unknown> = {}
+
+  for (const [key, entryValue] of Object.entries(value)) {
+    result[key] = sanitizeDebuggerValue(entryValue)
+  }
+
+  return result
+}
+
+function sanitizeDebuggerValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.replaceAll("\0", "")
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeDebuggerValue(item))
+  }
+
+  if (isRecord(value)) {
+    const result: Record<string, unknown> = {}
+
+    for (const [key, entryValue] of Object.entries(value)) {
+      result[key] = sanitizeDebuggerValue(entryValue)
+    }
+
+    return result
+  }
+
+  return value
 }
 
 function normalizeOffset(value: number | null | undefined): number | null {
