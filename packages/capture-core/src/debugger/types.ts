@@ -1,6 +1,7 @@
 import type {
   DISCARD_SESSION_MESSAGE,
   ENSURE_PAGE_RUNTIME_MESSAGE,
+  GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
   PAGE_BRIDGE_SOURCE,
@@ -53,6 +54,8 @@ export interface DebuggerNetworkEvent extends DebuggerEventTabContext {
   responseHeaders?: Record<string, string>
   requestBody?: string
   responseBody?: string
+  // Why the request failed, e.g. "Likely CORS error" or "net::ERR_ABORTED".
+  failure?: string
 }
 
 export type DebuggerEvent =
@@ -106,6 +109,7 @@ export interface BugReportDebuggerPayload {
       responseHeaders?: Record<string, string>
       requestBody?: string
       responseBody?: string
+      failure?: string
       timestamp: string
       offset: number | null
     }
@@ -181,6 +185,15 @@ export interface DebuggerEnsurePageRuntimeMessage {
   payload?: Record<string, never>
 }
 
+export interface DebuggerGetCaptureStateMessage {
+  type: typeof GET_CAPTURE_STATE_MESSAGE
+  payload?: Record<string, never>
+}
+
+export interface DebuggerCaptureState {
+  networkBodies: boolean
+}
+
 export type DebuggerRuntimeMessage =
   | DebuggerStartSessionMessage
   | DebuggerMarkRecordingStartedMessage
@@ -189,6 +202,7 @@ export type DebuggerRuntimeMessage =
   | DebuggerPageEventMessage
   | DebuggerPageEventsMessage
   | DebuggerEnsurePageRuntimeMessage
+  | DebuggerGetCaptureStateMessage
 
 export interface DebuggerContentBridgePayload {
   source: typeof PAGE_BRIDGE_SOURCE

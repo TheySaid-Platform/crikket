@@ -1,5 +1,5 @@
 {
-  "id": "8d48d992-5f54-454e-b9ce-77d8f64ad105",
+  "id": "a5ee011b-acd0-494a-a5e6-18a9fab3fe9e",
   "prevId": "182ba28e-6103-475c-ba30-f0c4c9c1a6b0",
   "version": "7",
   "dialect": "postgresql",
@@ -1930,6 +1930,12 @@
         },
         "page_url": {
           "name": "page_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure": {
+          "name": "failure",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -60,6 +60,7 @@ export function buildDebuggerSubmissionPayload(
       responseHeaders: event.responseHeaders,
       requestBody: event.requestBody,
       responseBody: event.responseBody,
+      failure: event.failure,
       timestamp,
       offset,
       ...tabContext,

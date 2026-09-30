@@ -1,4 +1,6 @@
 export const PAGE_SOURCE = "CRIKKET_DEBUGGER_PAGE_BRIDGE"
+// Messages from the extension bridge to this page script.
+export const PAGE_CONTROL_SOURCE = "CRIKKET_DEBUGGER_PAGE_CONTROL"
 export const INSTALL_FLAG = "__crikketDebuggerPageScriptInstalled"
 
 export const MAX_TEXT_LENGTH = 2000

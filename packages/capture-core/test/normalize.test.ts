@@ -182,6 +182,19 @@ describe("debugger normalization regression", () => {
     ])
   })
 
+  it("keeps why a network request failed", () => {
+    expect(
+      normalizeDebuggerEvent({
+        kind: "network",
+        timestamp: 1000,
+        method: "GET",
+        url: "https://api.example.com/data",
+        status: 0,
+        failure: "Likely CORS error",
+      })
+    ).toMatchObject({ status: 0, failure: "Likely CORS error" })
+  })
+
   it("normalizes replay buffers and rejects invalid storage data", () => {
     expect(
       normalizeStoredReplayBuffer({

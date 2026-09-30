@@ -2,6 +2,7 @@ import {
   BACKGROUND_LISTENER_FLAG,
   DISCARD_SESSION_MESSAGE,
   ENSURE_PAGE_RUNTIME_MESSAGE,
+  GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
   PAGE_EVENT_MESSAGE,
@@ -94,6 +95,14 @@ export function registerDebuggerBackgroundListeners(): void {
             await store.injectDebuggerScriptForTab(tabId)
           }
           safeSendResponse({ ok: true, data: undefined })
+          return
+        }
+        case GET_CAPTURE_STATE_MESSAGE: {
+          const data =
+            typeof tabId === "number"
+              ? await store.getCaptureState(tabId)
+              : { networkBodies: false }
+          safeSendResponse({ ok: true, data })
           return
         }
         case GET_SESSION_SNAPSHOT_MESSAGE: {

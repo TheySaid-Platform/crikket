@@ -1,5 +1,10 @@
+import {
+  CAPTURE_STATE_MESSAGE,
+  PAGE_CONTROL_SOURCE,
+} from "@crikket/capture-core/debugger/constants"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import {
+  getDebuggerCaptureState,
   isDebuggerContentBridgePayload,
   sendDebuggerPageEvents,
 } from "./messaging"
@@ -87,5 +92,34 @@ export function setupDebuggerContentBridge(): void {
   window.addEventListener("message", onWindowMessage)
   window.addEventListener("pagehide", flushQueue, {
     capture: true,
+  })
+
+  // Response bodies are only read while this tab is recording. Ask once on
+  // load (covers reloads and new iframes), then follow updates.
+  const setNetworkBodies = (enabled: boolean) => {
+    window.postMessage(
+      { source: PAGE_CONTROL_SOURCE, networkBodies: enabled },
+      window.location.origin === "null" ? "*" : window.location.origin
+    )
+  }
+
+  getDebuggerCaptureState()
+    .then((state) => {
+      if (state?.networkBodies) {
+        setNetworkBodies(true)
+      }
+    })
+    .catch((error: unknown) => {
+      reportNonFatalError("Failed to apply debugger capture state", error)
+    })
+
+  chrome.runtime.onMessage.addListener((message: unknown) => {
+    const candidate = message as { type?: unknown; networkBodies?: unknown }
+    if (
+      candidate?.type === CAPTURE_STATE_MESSAGE &&
+      typeof candidate.networkBodies === "boolean"
+    ) {
+      setNetworkBodies(candidate.networkBodies)
+    }
   })
 }

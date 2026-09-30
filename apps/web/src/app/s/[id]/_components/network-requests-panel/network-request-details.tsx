@@ -10,6 +10,7 @@ import type { NetworkRequestDetailsProps } from "./types"
 import {
   asKeyValueItems,
   DETAIL_SECTIONS,
+  describeFailure,
   formatBody,
   getBodyParams,
   getQueryParams,
@@ -89,7 +90,7 @@ export function NetworkRequestDetails({
           <span className="rounded border bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground">
             {request.method.toUpperCase()}
           </span>
-          {request.status !== null && (
+          {request.status !== null && !request.failure && (
             <span
               className={cn(
                 "rounded px-2 py-0.5 font-mono text-[11px]",
@@ -115,6 +116,11 @@ export function NetworkRequestDetails({
           {parsedUrl?.origin ?? "Unknown origin"} •{" "}
           {new Date(request.timestamp).toLocaleString()}
         </p>
+        {request.failure ? (
+          <p className="mt-2 rounded bg-red-500/10 px-2 py-1.5 text-[11px] text-red-700 dark:text-red-300">
+            {describeFailure(request.failure)}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-3 gap-1 rounded-lg border bg-background p-1">

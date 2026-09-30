@@ -136,6 +136,7 @@ export const bugReportNetworkRequest = pgTable(
     offset: integer("offset"), // ms from start of recording
     tabId: integer("tab_id"), // browser tab the request came from
     pageUrl: text("page_url"),
+    failure: text("failure"), // e.g. "Likely CORS error", "net::ERR_ABORTED"
   },
   (table) => [
     index("bug_report_network_request_bugReportId_idx").on(table.bugReportId),

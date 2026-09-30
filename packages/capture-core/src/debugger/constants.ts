@@ -5,6 +5,7 @@ export const MAX_NETWORK_BODY_LENGTH = 4000
 export const MAX_TAB_TITLE_LENGTH = 300
 
 export const PAGE_BRIDGE_SOURCE = "CRIKKET_DEBUGGER_PAGE_BRIDGE"
+export const PAGE_CONTROL_SOURCE = "CRIKKET_DEBUGGER_PAGE_CONTROL"
 export const BACKGROUND_LISTENER_FLAG =
   "__crikketDebuggerBackgroundListenerRegistered"
 
@@ -23,3 +24,7 @@ export const PAGE_EVENT_MESSAGE = "CRIKKET_DEBUGGER_PAGE_EVENT"
 export const PAGE_EVENTS_MESSAGE = "CRIKKET_DEBUGGER_PAGE_EVENTS"
 export const ENSURE_PAGE_RUNTIME_MESSAGE =
   "CRIKKET_DEBUGGER_ENSURE_PAGE_RUNTIME"
+// Asked by each frame's bridge on load: should this tab capture response
+// bodies? The service worker also pushes the answer when it changes.
+export const GET_CAPTURE_STATE_MESSAGE = "CRIKKET_DEBUGGER_GET_CAPTURE_STATE"
+export const CAPTURE_STATE_MESSAGE = "CRIKKET_DEBUGGER_CAPTURE_STATE"

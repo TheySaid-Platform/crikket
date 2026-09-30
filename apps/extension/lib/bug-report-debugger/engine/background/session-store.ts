@@ -1,8 +1,10 @@
-import { DEBUGGER_SESSIONS_STORAGE_KEY } from "@crikket/capture-core/debugger/constants"
+import {
+  CAPTURE_STATE_MESSAGE,
+  DEBUGGER_SESSIONS_STORAGE_KEY,
+} from "@crikket/capture-core/debugger/constants"
 import {
   appendActionEventWithDedup,
   appendEventWithRetentionPolicy,
-  appendNetworkEventWithDedup,
 } from "@crikket/capture-core/debugger/engine/background/retention"
 import {
   normalizeDebuggerEvent,
@@ -10,6 +12,7 @@ import {
 } from "@crikket/capture-core/debugger/normalize"
 import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
 import type {
+  DebuggerCaptureState,
   DebuggerEvent,
   DebuggerSessionSnapshot,
   StoredDebuggerSession,
@@ -20,6 +23,7 @@ import {
   injectDebuggerScriptIntoTab,
   isInjectablePageUrl,
 } from "./injection"
+import { createNetworkBodyMatcher, toNetworkBody } from "./network-bodies"
 
 const RECORDER_PAGE_PATH = "/recorder.html"
 const TAB_SWITCH_ACTION_TYPE = "tab-switch"
@@ -91,6 +95,7 @@ interface DebuggerSessionStore {
   handleTabCreated: (tab: chrome.tabs.Tab) => Promise<void>
   handleTabUpdated: (tab: chrome.tabs.Tab) => Promise<void>
   handleTabRemoved: (tabId: number) => Promise<void>
+  getCaptureState: (tabId: number) => Promise<DebuggerCaptureState>
 }
 
 export function createDebuggerSessionStore(): DebuggerSessionStore {
@@ -102,6 +107,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
   // They differ while a just-opened tab has no URL yet.
   const activeTabBySession = new Map<string, number>()
   const lastSwitchTabBySession = new Map<string, number>()
+  const networkBodies = createNetworkBodyMatcher()
 
   let isLoaded = false
   let loadPromise: Promise<void> | null = null
@@ -196,6 +202,16 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     await loadPromise
   }
 
+  // Tells every frame in a tab whether to read response bodies. Only video
+  // sessions follow the user around, so only they turn it on.
+  const sendCaptureState = (tabId: number, networkBodies: boolean) => {
+    chrome.tabs
+      .sendMessage(tabId, { type: CAPTURE_STATE_MESSAGE, networkBodies })
+      .catch(() => {
+        // No content script in this tab (yet); it asks on load instead.
+      })
+  }
+
   const removeSession = (sessionId: string) => {
     if (!sessionsById.delete(sessionId)) {
       return
@@ -203,9 +219,11 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     activeTabBySession.delete(sessionId)
     lastSwitchTabBySession.delete(sessionId)
+    networkBodies.forget(sessionId)
     for (const [tabId, mappedSessionId] of tabToSession) {
       if (mappedSessionId === sessionId) {
         tabToSession.delete(tabId)
+        sendCaptureState(tabId, false)
       }
     }
   }
@@ -219,9 +237,9 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
 
     for (const event of events) {
-      if (event.kind === "network") {
-        appendNetworkEventWithDedup(session.events, event)
-      } else if (event.kind === "action") {
+      // Network events are not deduplicated: webRequest reports each request
+      // once, so two identical ones are two real requests.
+      if (event.kind === "action") {
         appendActionEventWithDedup(session.events, event)
       } else {
         appendEventWithRetentionPolicy(session.events, event)
@@ -332,6 +350,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
 
     tabToSession.set(tabId, session.sessionId)
+    sendCaptureState(tabId, true)
     if (!session.tabs.some((entry) => entry.tabId === tabId)) {
       session.tabs.push({ tabId, ...describeTab(tab), joinedAt: Date.now() })
     }
@@ -453,6 +472,9 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     lastSwitchTabBySession.set(sessionId, payload.captureTabId)
     schedulePersist()
     await injectDebuggerScriptIntoTab(payload.captureTabId)
+    if (payload.captureType === "video") {
+      sendCaptureState(payload.captureTabId, true)
+    }
 
     return {
       sessionId,
@@ -470,6 +492,49 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     await injectDebuggerScriptIntoTab(tabId)
   }
 
+  const normalizePageEvents = (
+    tabId: number,
+    rawEvents: unknown[]
+  ): DebuggerEvent[] => {
+    const resolvedPageUrl = toPageUrl(tabUrls.get(tabId))
+    const normalizedEvents: DebuggerEvent[] = []
+
+    for (const rawEvent of rawEvents) {
+      const normalizedEvent = normalizeDebuggerEvent(rawEvent)
+      if (!normalizedEvent) {
+        continue
+      }
+
+      // Tab context comes from the browser, never from the page.
+      normalizedEvent.tabId = tabId
+      normalizedEvent.pageUrl = resolvedPageUrl
+      normalizedEvents.push(normalizedEvent)
+    }
+
+    return normalizedEvents
+  }
+
+  // Response bodies fill in requests already recorded, not new events, so
+  // pull them out and hand back everything else.
+  const takeNetworkBodies = (
+    tabId: number,
+    rawEvents: unknown[],
+    session: StoredDebuggerSession | undefined
+  ): unknown[] => {
+    const otherEvents: unknown[] = []
+
+    for (const rawEvent of rawEvents) {
+      const body = toNetworkBody(rawEvent, tabId)
+      if (!body) {
+        otherEvents.push(rawEvent)
+      } else if (session && networkBodies.add(session, body)) {
+        schedulePersist()
+      }
+    }
+
+    return otherEvents
+  }
+
   const appendPageEvents = async (
     tabId: number,
     rawEvents: unknown[],
@@ -484,28 +549,26 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     if (pageUrl && isInjectablePageUrl(pageUrl)) {
       tabUrls.set(tabId, pageUrl)
     }
-    const resolvedPageUrl = toPageUrl(tabUrls.get(tabId))
-
-    const normalizedEvents: DebuggerEvent[] = []
-    for (const rawEvent of rawEvents) {
-      const normalizedEvent = normalizeDebuggerEvent(rawEvent)
-      if (!normalizedEvent) {
-        continue
-      }
-
-      // Tab context comes from the browser, never from the page.
-      normalizedEvent.tabId = tabId
-      normalizedEvent.pageUrl = resolvedPageUrl
-      normalizedEvents.push(normalizedEvent)
-    }
-
-    appendEventsToRecentBuffer(tabId, normalizedEvents)
-
     const sessionId = tabToSession.get(tabId)
     const session = sessionId ? sessionsById.get(sessionId) : undefined
-    if (session) {
+
+    const eventsToNormalize = takeNetworkBodies(tabId, rawEvents, session)
+    const normalizedEvents = normalizePageEvents(tabId, eventsToNormalize)
+    appendEventsToRecentBuffer(tabId, normalizedEvents)
+
+    if (session && normalizedEvents.length > 0) {
       appendEventsToSession(session, normalizedEvents)
+      networkBodies.drain(session)
     }
+  }
+
+  const getCaptureState = async (
+    tabId: number
+  ): Promise<DebuggerCaptureState> => {
+    await ensureLoaded()
+
+    const session = sessionsById.get(tabToSession.get(tabId) ?? "")
+    return { networkBodies: session?.captureType === "video" }
   }
 
   const getSessionSnapshot = async (
@@ -693,5 +756,6 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     handleTabCreated,
     handleTabUpdated,
     handleTabRemoved,
+    getCaptureState,
   }
 }

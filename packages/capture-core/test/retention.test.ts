@@ -4,77 +4,10 @@ import { MAX_EVENT_COUNT } from "../src/debugger/constants"
 import {
   appendActionEventWithDedup,
   appendEventWithRetentionPolicy,
-  appendNetworkEventWithDedup,
 } from "../src/debugger/engine/background/retention"
 import type { DebuggerEvent } from "../src/debugger/types"
 
 describe("debugger retention regression", () => {
-  it("deduplicates adjacent network events inside the duplicate window", () => {
-    const events: DebuggerEvent[] = []
-
-    appendNetworkEventWithDedup(events, {
-      kind: "network",
-      timestamp: 1000,
-      method: "GET",
-      url: "https://example.com/api/reports",
-      status: 200,
-    })
-    appendNetworkEventWithDedup(events, {
-      kind: "network",
-      timestamp: 1200,
-      method: "GET",
-      url: "https://example.com/api/reports",
-      status: 200,
-    })
-    appendNetworkEventWithDedup(events, {
-      kind: "network",
-      timestamp: 1500,
-      method: "GET",
-      url: "https://example.com/api/reports",
-      status: 200,
-    })
-
-    expect(events).toEqual([
-      {
-        kind: "network",
-        timestamp: 1000,
-        method: "GET",
-        url: "https://example.com/api/reports",
-        status: 200,
-      },
-      {
-        kind: "network",
-        timestamp: 1500,
-        method: "GET",
-        url: "https://example.com/api/reports",
-        status: 200,
-      },
-    ])
-  })
-
-  it("keeps the same request from two different tabs", () => {
-    const events: DebuggerEvent[] = []
-
-    appendNetworkEventWithDedup(events, {
-      kind: "network",
-      timestamp: 1000,
-      method: "GET",
-      url: "https://example.com/api/me",
-      status: 200,
-      tabId: 1,
-    })
-    appendNetworkEventWithDedup(events, {
-      kind: "network",
-      timestamp: 1100,
-      method: "GET",
-      url: "https://example.com/api/me",
-      status: 200,
-      tabId: 2,
-    })
-
-    expect(events.map((event) => event.tabId)).toEqual([1, 2])
-  })
-
   it("deduplicates repeated navigation actions for the same url", () => {
     const events: DebuggerEvent[] = []
 

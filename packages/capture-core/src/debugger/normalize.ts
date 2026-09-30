@@ -157,6 +157,7 @@ export function normalizeDebuggerEvent(value: unknown): DebuggerEvent | null {
     responseHeaders: sanitizeHeaders(value.responseHeaders),
     requestBody: asOptionalString(value.requestBody, MAX_NETWORK_BODY_LENGTH),
     responseBody: asOptionalString(value.responseBody, MAX_NETWORK_BODY_LENGTH),
+    failure: asOptionalString(value.failure, 120),
     ...normalizeTabContext(value),
   }
 }

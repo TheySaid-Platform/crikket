@@ -1,8 +1,9 @@
 import { installActionAndNavigationCapture } from "./actions"
 import { installConsoleCapture } from "./console"
-import { INSTALL_FLAG } from "./constants"
+import { INSTALL_FLAG, PAGE_CONTROL_SOURCE } from "./constants"
 import { createPageDiagnostics } from "./diagnostics"
 import { createEventQueue } from "./event-queue"
+import { createNetworkBodyCapture } from "./network-bodies"
 import { createStringifyValue } from "./serializer"
 import type { ConsoleLevel } from "./types"
 import { createNonFatalReporter, truncate } from "./utils"
@@ -73,6 +74,27 @@ export function installDebuggerPageRuntime(): void {
   installConsoleCapture({
     reporter,
     postConsole,
+  })
+
+  // Off until the extension says this tab is recording.
+  const networkBodies = createNetworkBodyCapture({
+    reporter,
+    postBody: enqueueEvent,
+  })
+  window.addEventListener("message", (event) => {
+    const data = event.data as {
+      source?: unknown
+      networkBodies?: unknown
+    } | null
+    if (event.source !== window || data?.source !== PAGE_CONTROL_SOURCE) {
+      return
+    }
+
+    if (data.networkBodies === true) {
+      networkBodies.enable()
+    } else if (data.networkBodies === false) {
+      networkBodies.disable()
+    }
   })
 
   const flushOnPageHide = () => {

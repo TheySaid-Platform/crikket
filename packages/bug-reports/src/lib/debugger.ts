@@ -63,6 +63,7 @@ const debuggerNetworkRequestSchema = z.object({
   responseHeaders: debuggerHeadersSchema,
   requestBody: z.string().max(8000).optional(),
   responseBody: z.string().max(8000).optional(),
+  failure: z.string().max(200).optional(),
   timestamp: z.string().datetime({ offset: true }),
   offset: z
     .number()
@@ -135,6 +136,7 @@ export interface BugReportNetworkRequestListItem {
   offset: number | null
   tabId: number | null
   pageUrl: string | null
+  failure: string | null
 }
 
 export interface BugReportNetworkRequestPayload {
@@ -204,6 +206,7 @@ export async function getBugReportNetworkRequestsPage({
       offset: bugReportNetworkRequest.offset,
       tabId: bugReportNetworkRequest.tabId,
       pageUrl: bugReportNetworkRequest.pageUrl,
+      failure: bugReportNetworkRequest.failure,
     })
     .from(bugReportNetworkRequest)
     .where(buildNetworkRequestsWhere({ bugReportId, search, tabId }))
@@ -224,6 +227,7 @@ export async function getBugReportNetworkRequestsPage({
       offset: request.offset,
       tabId: request.tabId,
       pageUrl: request.pageUrl,
+      failure: request.failure,
     }
   })
 }
@@ -403,6 +407,7 @@ export async function persistBugReportDebuggerData(
             offset: normalizeOffset(request.offset),
             tabId: request.tabId ?? null,
             pageUrl: sanitizeDebuggerText(request.pageUrl),
+            failure: sanitizeDebuggerText(request.failure),
           }))
         )
       })

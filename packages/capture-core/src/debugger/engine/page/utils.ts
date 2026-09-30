@@ -25,8 +25,10 @@ const SENSITIVE_NAME_PATTERNS = [
   "client_secret",
 ] as const
 
+// Also matches JSON pairs like "password":"x", which matters when a body is cut
+// off and can no longer be parsed.
 const REDACTABLE_FIELD_PATTERN =
-  /((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret|password|passwd|pwd|authorization|cookie|session[_-]?id)\s*[:=]\s*)([^&\s",;]+)/gi
+  /((?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|client[_-]?secret|password|passwd|pwd|authorization|cookie|session[_-]?id)["']?\s*[:=]\s*["']?)([^&\s",;']+)/gi
 
 export const truncate = (
   value: string,

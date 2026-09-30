@@ -28,6 +28,21 @@ export function safeParseUrl(value: string | undefined): URL | null {
   }
 }
 
+const LIKELY_CORS_FAILURE = "Likely CORS error"
+
+// Short label for a request that never got a usable response.
+export function failureLabel(failure: string): string {
+  return failure === LIKELY_CORS_FAILURE ? "Likely CORS" : "Failed"
+}
+
+export function describeFailure(failure: string): string {
+  if (failure === LIKELY_CORS_FAILURE) {
+    return "Likely CORS error: the browser blocked this cross-origin request because the server's response did not allow this page's origin. (Chrome reports it as net::ERR_FAILED, which a failing service worker can also cause.)"
+  }
+
+  return `Request failed: ${failure}`
+}
+
 export function statusTone(status: number): string {
   if (status >= 200 && status < 300) {
     return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
