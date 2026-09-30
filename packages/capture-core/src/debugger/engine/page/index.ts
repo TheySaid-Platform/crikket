@@ -25,6 +25,7 @@ export function installDebuggerPageRuntime(): void {
     recordFlushedBatch: diagnostics.recordFlushedBatch,
   })
   const stringifyValue = createStringifyValue(reporter)
+  const isTopFrame = window === window.top
 
   const postAction = (
     actionType: string,
@@ -55,13 +56,19 @@ export function installDebuggerPageRuntime(): void {
       message: truncate(serializedArgs.join(" ")),
       metadata: {
         argumentCount: args.length,
+        // Logs from iframes (embeds, widgets) say where they came from.
+        ...(isTopFrame ? {} : { frameOrigin: location.origin }),
       },
     })
   }
 
-  installActionAndNavigationCapture({
-    postAction,
-  })
+  // Iframes only report console output and errors; clicks and navigation come
+  // from the top page.
+  if (isTopFrame) {
+    installActionAndNavigationCapture({
+      postAction,
+    })
+  }
 
   installConsoleCapture({
     reporter,
