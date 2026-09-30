@@ -3,6 +3,11 @@ import {
   hasDebuggerPayloadData,
 } from "@crikket/capture-core/debugger/payload"
 import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
+import {
+  findFirstReportPage,
+  type ReportPage,
+  suggestReportTitle,
+} from "@crikket/capture-core/debugger/report-title"
 import type {
   BugReportDebuggerPayload,
   DebuggerSessionTab,
@@ -35,7 +40,10 @@ import {
   markDebuggerRecordingStarted,
 } from "@/lib/bug-report-debugger/client"
 import { submitBugReportWithUploads } from "@/lib/bug-report-upload"
-import { readVideoSourceFromSearch } from "@/lib/capture-context"
+import {
+  type CaptureContext,
+  readVideoSourceFromSearch,
+} from "@/lib/capture-context"
 import {
   buildCaptureContextSubmissionData,
   type DebuggerCaptureSummary,
@@ -56,6 +64,8 @@ interface DebuggerSubmissionInput {
   payload: BugReportDebuggerPayload | undefined
   summary: DebuggerCaptureSummary
   tabs: DebuggerSessionTab[]
+  suggestedTitle: string | null
+  firstPage: ReportPage | null
   warnings: string[]
 }
 
@@ -71,6 +81,7 @@ function App() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submissionWarnings, setSubmissionWarnings] = useState<string[]>([])
   const [preSubmitWarnings, setPreSubmitWarnings] = useState<string[]>([])
+  const [debuggerTitle, setDebuggerTitle] = useState<string | null>(null)
   const [debuggerSummary, setDebuggerSummary] =
     useState<DebuggerCaptureSummary>(EMPTY_DEBUGGER_SUMMARY)
   const debuggerSessionId = useMemo(
@@ -123,6 +134,8 @@ function App() {
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
         tabs: [],
+        suggestedTitle: null,
+        firstPage: null,
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -146,6 +159,8 @@ function App() {
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
         tabs: [],
+        suggestedTitle: null,
+        firstPage: null,
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -169,6 +184,8 @@ function App() {
       payload: hasPayloadData ? payload : undefined,
       summary,
       tabs: getReportedTabs(snapshot.tabs, snapshot.captureTabId, payload),
+      suggestedTitle: suggestReportTitle(snapshot),
+      firstPage: findFirstReportPage(snapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
   }, [debuggerSessionId])
@@ -248,6 +265,7 @@ function App() {
         }
 
         setDebuggerSummary(debuggerInput.summary)
+        setDebuggerTitle(debuggerInput.suggestedTitle)
         setPreSubmitWarnings(debuggerInput.warnings)
       })
       .catch((error: unknown) => {
@@ -283,6 +301,7 @@ function App() {
 
   const handleReset = () => {
     resetCapture()
+    setDebuggerTitle(null)
     setState("idle")
     setResultUrl("")
     setSubmitError(null)
@@ -321,8 +340,9 @@ function App() {
             )
           : 0
       const debuggerSubmission = await getDebuggerSubmissionInput()
-      const captureContextSubmissionData =
-        buildCaptureContextSubmissionData(captureContext)
+      const captureContextSubmissionData = buildCaptureContextSubmissionData(
+        getReportPageContext(captureContext, debuggerSubmission.firstPage)
+      )
       const warnings = [
         ...debuggerSubmission.warnings,
         ...captureContextSubmissionData.warnings,
@@ -378,7 +398,8 @@ function App() {
 
   const activeBlob = captureType === "video" ? recordedBlob : screenshotBlob
   const suggestedTitle =
-    captureContext.title?.trim() ||
+    debuggerTitle ||
+    (isWebPageUrl(captureContext.url) ? captureContext.title?.trim() : "") ||
     (captureType === "video" ? "Video bug report" : "Screenshot bug report")
   const previewUrl = useMemo(() => {
     if (!activeBlob) return null
@@ -462,6 +483,23 @@ function App() {
       </Card>
     </div>
   )
+}
+
+function isWebPageUrl(url: string | undefined): boolean {
+  return Boolean(url?.startsWith("http://") || url?.startsWith("https://"))
+}
+
+// A recording started on a new-tab or other browser page reports the first
+// website the user went to instead.
+function getReportPageContext(
+  captureContext: CaptureContext,
+  firstPage: ReportPage | null
+): CaptureContext {
+  if (isWebPageUrl(captureContext.url) || !firstPage) {
+    return captureContext
+  }
+
+  return { url: firstPage.url, title: firstPage.title }
 }
 
 function getStatusLabel(state: State, isChoosingDisplay: boolean): string {
