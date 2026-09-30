@@ -6,7 +6,7 @@ import {
 } from "@crikket/db/schema/bug-report"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { retryOnUniqueViolation } from "@crikket/shared/lib/server/retry-on-unique-violation"
-import { and, asc, count, eq, ilike, or, sql } from "drizzle-orm"
+import { and, asc, count, eq, ilike, or, type SQL, sql } from "drizzle-orm"
 import { nanoid } from "nanoid"
 import { z } from "zod"
 
@@ -15,6 +15,8 @@ const MAX_OFFSET_MS = 24 * 60 * 60 * 1000
 
 const debuggerMetadataSchema = z.record(z.string(), z.unknown()).optional()
 const debuggerHeadersSchema = z.record(z.string(), z.string()).optional()
+const debuggerTabIdSchema = z.number().int().nonnegative().optional()
+const debuggerPageUrlSchema = z.string().max(4096).optional()
 const debuggerUnknownArraySchema = z
   .array(z.unknown())
   .max(MAX_DEBUGGER_ITEMS_PER_KIND)
@@ -32,6 +34,8 @@ const debuggerActionSchema = z.object({
     .nullable()
     .optional(),
   metadata: debuggerMetadataSchema,
+  tabId: debuggerTabIdSchema,
+  pageUrl: debuggerPageUrlSchema,
 })
 
 const debuggerLogSchema = z.object({
@@ -46,6 +50,8 @@ const debuggerLogSchema = z.object({
     .nullable()
     .optional(),
   metadata: debuggerMetadataSchema,
+  tabId: debuggerTabIdSchema,
+  pageUrl: debuggerPageUrlSchema,
 })
 
 const debuggerNetworkRequestSchema = z.object({
@@ -65,6 +71,8 @@ const debuggerNetworkRequestSchema = z.object({
     .max(MAX_OFFSET_MS)
     .nullable()
     .optional(),
+  tabId: debuggerTabIdSchema,
+  pageUrl: debuggerPageUrlSchema,
 })
 
 export const bugReportDebuggerInputSchema = z
@@ -100,6 +108,8 @@ export interface BugReportDebuggerEventsData {
     timestamp: string
     offset: number | null
     metadata: Record<string, unknown> | null
+    tabId: number | null
+    pageUrl: string | null
   }>
   logs: Array<{
     id: string
@@ -108,6 +118,8 @@ export interface BugReportDebuggerEventsData {
     timestamp: string
     offset: number | null
     metadata: Record<string, unknown> | null
+    tabId: number | null
+    pageUrl: string | null
   }>
 }
 
@@ -121,6 +133,8 @@ export interface BugReportNetworkRequestListItem {
   responseHeaders: Record<string, string> | null
   timestamp: string
   offset: number | null
+  tabId: number | null
+  pageUrl: string | null
 }
 
 export interface BugReportNetworkRequestPayload {
@@ -133,6 +147,7 @@ export interface BugReportNetworkRequestsPageInput {
   limit: number
   offset: number
   search?: string
+  tabId?: number
 }
 
 export interface BugReportNetworkRequestPayloadInput {
@@ -157,6 +172,7 @@ export async function clearBugReportDebuggerData(
 export async function countBugReportNetworkRequests(input: {
   bugReportId: string
   search?: string
+  tabId?: number
 }): Promise<number> {
   const result = await db
     .select({ value: count() })
@@ -171,6 +187,7 @@ export async function getBugReportNetworkRequestsPage({
   limit,
   offset,
   search,
+  tabId,
 }: BugReportNetworkRequestsPageInput): Promise<
   BugReportNetworkRequestListItem[]
 > {
@@ -185,9 +202,11 @@ export async function getBugReportNetworkRequestsPage({
       responseHeaders: bugReportNetworkRequest.responseHeaders,
       timestamp: bugReportNetworkRequest.timestamp,
       offset: bugReportNetworkRequest.offset,
+      tabId: bugReportNetworkRequest.tabId,
+      pageUrl: bugReportNetworkRequest.pageUrl,
     })
     .from(bugReportNetworkRequest)
-    .where(buildNetworkRequestsWhere({ bugReportId, search }))
+    .where(buildNetworkRequestsWhere({ bugReportId, search, tabId }))
     .orderBy(asc(bugReportNetworkRequest.timestamp))
     .limit(limit)
     .offset(offset)
@@ -203,6 +222,8 @@ export async function getBugReportNetworkRequestsPage({
       responseHeaders: asStringRecord(request.responseHeaders),
       timestamp: request.timestamp.toISOString(),
       offset: request.offset,
+      tabId: request.tabId,
+      pageUrl: request.pageUrl,
     }
   })
 }
@@ -238,31 +259,35 @@ export async function getBugReportNetworkRequestPayload({
 function buildNetworkRequestsWhere(input: {
   bugReportId: string
   search?: string
+  tabId?: number
 }) {
   const bugReportCondition = eq(
     bugReportNetworkRequest.bugReportId,
     input.bugReportId
   )
+  const conditions: SQL[] = [bugReportCondition]
 
-  if (!input.search) {
-    return bugReportCondition
+  if (typeof input.tabId === "number") {
+    conditions.push(eq(bugReportNetworkRequest.tabId, input.tabId))
   }
 
-  const searchPattern = `%${input.search}%`
-  const searchCondition = or(
-    ilike(bugReportNetworkRequest.method, searchPattern),
-    ilike(bugReportNetworkRequest.url, searchPattern),
-    ilike(
-      sql<string>`coalesce(cast(${bugReportNetworkRequest.status} as text), '')`,
-      searchPattern
+  if (input.search) {
+    const searchPattern = `%${input.search}%`
+    const searchCondition = or(
+      ilike(bugReportNetworkRequest.method, searchPattern),
+      ilike(bugReportNetworkRequest.url, searchPattern),
+      ilike(
+        sql<string>`coalesce(cast(${bugReportNetworkRequest.status} as text), '')`,
+        searchPattern
+      )
     )
-  )
 
-  if (!searchCondition) {
-    return bugReportCondition
+    if (searchCondition) {
+      conditions.push(searchCondition)
+    }
   }
 
-  return and(bugReportCondition, searchCondition) ?? bugReportCondition
+  return and(...conditions) ?? bugReportCondition
 }
 
 export async function persistBugReportDebuggerData(
@@ -317,6 +342,8 @@ export async function persistBugReportDebuggerData(
             timestamp: new Date(action.timestamp),
             offset: normalizeOffset(action.offset),
             metadata: sanitizeDebuggerMetadata(action.metadata),
+            tabId: action.tabId ?? null,
+            pageUrl: sanitizeDebuggerText(action.pageUrl),
           }))
         )
       })
@@ -342,6 +369,8 @@ export async function persistBugReportDebuggerData(
             timestamp: new Date(log.timestamp),
             offset: normalizeOffset(log.offset),
             metadata: sanitizeDebuggerMetadata(log.metadata),
+            tabId: log.tabId ?? null,
+            pageUrl: sanitizeDebuggerText(log.pageUrl),
           }))
         )
       })
@@ -372,6 +401,8 @@ export async function persistBugReportDebuggerData(
             responseBody: sanitizeDebuggerText(request.responseBody),
             timestamp: new Date(request.timestamp),
             offset: normalizeOffset(request.offset),
+            tabId: request.tabId ?? null,
+            pageUrl: sanitizeDebuggerText(request.pageUrl),
           }))
         )
       })
@@ -405,6 +436,8 @@ export async function getBugReportDebuggerEventsData(
         timestamp: bugReportAction.timestamp,
         offset: bugReportAction.offset,
         metadata: bugReportAction.metadata,
+        tabId: bugReportAction.tabId,
+        pageUrl: bugReportAction.pageUrl,
       })
       .from(bugReportAction)
       .where(eq(bugReportAction.bugReportId, bugReportId))
@@ -417,6 +450,8 @@ export async function getBugReportDebuggerEventsData(
         timestamp: bugReportLog.timestamp,
         offset: bugReportLog.offset,
         metadata: bugReportLog.metadata,
+        tabId: bugReportLog.tabId,
+        pageUrl: bugReportLog.pageUrl,
       })
       .from(bugReportLog)
       .where(eq(bugReportLog.bugReportId, bugReportId))
@@ -431,6 +466,8 @@ export async function getBugReportDebuggerEventsData(
       timestamp: action.timestamp.toISOString(),
       offset: action.offset,
       metadata: asUnknownRecord(action.metadata),
+      tabId: action.tabId,
+      pageUrl: action.pageUrl,
     })),
     logs: logs.map((log) => ({
       id: log.id,
@@ -439,6 +476,8 @@ export async function getBugReportDebuggerEventsData(
       timestamp: log.timestamp.toISOString(),
       offset: log.offset,
       metadata: asUnknownRecord(log.metadata),
+      tabId: log.tabId,
+      pageUrl: log.pageUrl,
     })),
   }
 }

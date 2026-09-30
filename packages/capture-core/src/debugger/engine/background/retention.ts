@@ -59,6 +59,7 @@ function isLikelyDuplicateNetworkEvent(
     }
 
     const isSameKey =
+      event.tabId === candidate.tabId &&
       event.method === candidate.method &&
       event.url === candidate.url &&
       (event.status ?? 0) === (candidate.status ?? 0)
@@ -97,7 +98,8 @@ function isLikelyDuplicateNavigationEvent(
     if (
       !event ||
       event.kind !== "action" ||
-      event.actionType !== "navigation"
+      event.actionType !== "navigation" ||
+      event.tabId !== candidate.tabId
     ) {
       continue
     }

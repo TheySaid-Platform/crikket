@@ -2,6 +2,7 @@ import type { DebuggerAction, DebuggerTimelineEntry } from "./types"
 import { formatOffset } from "./utils"
 
 const INPUT_ACTION_TYPE = "input"
+const TAB_SWITCH_ACTION_TYPE = "tab-switch"
 
 export interface ReproductionStepItem {
   actionIds: string[]
@@ -61,7 +62,8 @@ export function buildReproductionSteps(input: {
         title,
         selectedEntry,
         targetLabel:
-          firstAction.type === "navigation"
+          firstAction.type === "navigation" ||
+          firstAction.type === TAB_SWITCH_ACTION_TYPE
             ? null
             : (firstAction.target ?? null),
       },
@@ -134,6 +136,8 @@ function formatActionTitle(input: {
       return "Submit form"
     case "keydown":
       return "Use keyboard"
+    case TAB_SWITCH_ACTION_TYPE:
+      return "Switch tab"
     case "navigation": {
       if (
         isStateUpdateNavigation(input.action, input.previousNavigationAction)
@@ -169,6 +173,14 @@ function formatActionSummary(input: {
       const parts = [
         asNonEmptyString(input.lastAction.metadata?.title),
         formatNavigationMode(input.lastAction.metadata?.mode),
+      ].filter(Boolean)
+
+      return parts.length > 0 ? parts.join(" • ") : null
+    }
+    case TAB_SWITCH_ACTION_TYPE: {
+      const parts = [
+        asNonEmptyString(input.action.metadata?.title),
+        asNonEmptyString(input.action.metadata?.url),
       ].filter(Boolean)
 
       return parts.length > 0 ? parts.join(" • ") : null

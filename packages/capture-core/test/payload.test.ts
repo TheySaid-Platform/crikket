@@ -14,6 +14,7 @@ describe("debugger payload regression", () => {
       captureType: "video",
       startedAt: 1000,
       recordingStartedAt: 1500,
+      tabs: [{ tabId: 12, joinedAt: 1000 }],
       events: [
         {
           kind: "network",
@@ -82,6 +83,48 @@ describe("debugger payload regression", () => {
           offset: 600,
         },
       ],
+    })
+  })
+
+  it("carries the source tab of each event into the payload", () => {
+    const payload = buildDebuggerSubmissionPayload({
+      sessionId: "session_2",
+      captureTabId: 1,
+      captureType: "video",
+      startedAt: 1000,
+      recordingStartedAt: 1000,
+      tabs: [
+        { tabId: 1, joinedAt: 1000 },
+        { tabId: 2, joinedAt: 1100 },
+      ],
+      events: [
+        {
+          kind: "network",
+          timestamp: 1200,
+          method: "GET",
+          url: "https://accounts.example.com/token",
+          status: 200,
+          tabId: 2,
+          pageUrl: "https://accounts.example.com/login",
+        },
+        {
+          kind: "console",
+          timestamp: 1300,
+          level: "log",
+          message: "back in app",
+          tabId: 1,
+          pageUrl: "https://example.com/app",
+        },
+      ],
+    })
+
+    expect(payload.networkRequests[0]).toMatchObject({
+      tabId: 2,
+      pageUrl: "https://accounts.example.com/login",
+    })
+    expect(payload.logs[0]).toMatchObject({
+      tabId: 1,
+      pageUrl: "https://example.com/app",
     })
   })
 

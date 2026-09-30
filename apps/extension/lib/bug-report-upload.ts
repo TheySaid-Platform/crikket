@@ -25,6 +25,7 @@ export async function submitBugReportWithUploads(input: {
     duration?: string
     durationMs?: number
     pageTitle?: string
+    tabs?: Array<{ tabId: number; url?: string; title?: string }>
   }
   priority: Priority
   title?: string

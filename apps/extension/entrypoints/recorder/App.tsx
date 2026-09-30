@@ -3,7 +3,10 @@ import {
   hasDebuggerPayloadData,
 } from "@crikket/capture-core/debugger/payload"
 import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
-import type { BugReportDebuggerPayload } from "@crikket/capture-core/debugger/types"
+import type {
+  BugReportDebuggerPayload,
+  DebuggerSessionTab,
+} from "@crikket/capture-core/debugger/types"
 import { env } from "@crikket/env/extension"
 import type { Priority } from "@crikket/shared/constants/priorities"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
@@ -16,6 +19,7 @@ import {
 } from "@crikket/ui/components/ui/card"
 import { AlertCircle } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { ChooseDisplayStep } from "@/components/choose-display-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
 import { SuccessStep } from "@/components/success-step"
@@ -31,12 +35,14 @@ import {
   markDebuggerRecordingStarted,
 } from "@/lib/bug-report-debugger/client"
 import { submitBugReportWithUploads } from "@/lib/bug-report-upload"
+import { readVideoSourceFromSearch } from "@/lib/capture-context"
 import {
   buildCaptureContextSubmissionData,
   type DebuggerCaptureSummary,
   dedupeMessages,
   EMPTY_DEBUGGER_SUMMARY,
   getDebuggerCaptureSummary,
+  getReportedTabs,
   getSubmissionErrorMessage,
   isUnauthorizedSubmissionError,
   normalizeOptionalText,
@@ -49,6 +55,7 @@ interface DebuggerSubmissionInput {
   sessionId: string | null
   payload: BugReportDebuggerPayload | undefined
   summary: DebuggerCaptureSummary
+  tabs: DebuggerSessionTab[]
   warnings: string[]
 }
 
@@ -68,6 +75,11 @@ function App() {
     useState<DebuggerCaptureSummary>(EMPTY_DEBUGGER_SUMMARY)
   const debuggerSessionId = useMemo(
     () => readDebuggerSessionIdFromSearch(window.location.search),
+    []
+  )
+
+  const videoSource = useMemo(
+    () => readVideoSourceFromSearch(window.location.search),
     []
   )
 
@@ -110,6 +122,7 @@ function App() {
         sessionId: null,
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
+        tabs: [],
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -132,6 +145,7 @@ function App() {
         sessionId,
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
+        tabs: [],
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -154,6 +168,7 @@ function App() {
       sessionId,
       payload: hasPayloadData ? payload : undefined,
       summary,
+      tabs: getReportedTabs(snapshot.tabs, snapshot.captureTabId, payload),
       warnings,
     } satisfies DebuggerSubmissionInput
   }, [debuggerSessionId])
@@ -174,7 +189,7 @@ function App() {
   })
 
   const startVideoCapture = useCallback(async () => {
-    const success = await startCapture()
+    const success = await startCapture(videoSource)
     if (success) {
       const startedAt = Date.now()
       const sessionId = debuggerSessionId
@@ -194,7 +209,7 @@ function App() {
       setRecordedDurationMs(null)
       setState("recording")
     }
-  }, [debuggerSessionId, startCapture])
+  }, [debuggerSessionId, startCapture, videoSource])
 
   const handleStartCapture = useCallback(async () => {
     if (captureType === "screenshot") {
@@ -324,6 +339,11 @@ function App() {
           duration: formatDuration(durationMs),
           durationMs,
           pageTitle: captureContextSubmissionData.normalizedPageTitle,
+          tabs: debuggerSubmission.tabs.map((tab) => ({
+            tabId: tab.tabId,
+            url: tab.url,
+            title: tab.title,
+          })),
         },
         deviceInfo: getDeviceInfo(),
         debuggerPayload: debuggerSubmission.payload,
@@ -366,6 +386,7 @@ function App() {
   }, [activeBlob])
 
   const error = captureError || submitError
+  const isChoosingDisplay = captureType === "video" && videoSource === "display"
 
   useEffect(() => {
     if (state === "recording") {
@@ -384,10 +405,7 @@ function App() {
             Crikket Bug Report
           </CardTitle>
           <CardDescription className="text-sm">
-            {state === "idle" && "Waiting for capture"}
-            {state === "recording" && "Recording in progress..."}
-            {state === "stopped" && "Review and submit"}
-            {state === "success" && "Report submitted!"}
+            {getStatusLabel(state, isChoosingDisplay)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 px-6 py-6">
@@ -399,9 +417,10 @@ function App() {
           ) : null}
 
           {state === "idle" ? (
-            <p className="text-center text-muted-foreground">
-              No active capture. Start from the extension popup.
-            </p>
+            <IdleStep
+              isChoosingDisplay={isChoosingDisplay}
+              onChooseDisplay={handleStartCapture}
+            />
           ) : null}
 
           {state === "recording" ? (
@@ -442,6 +461,39 @@ function App() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function getStatusLabel(state: State, isChoosingDisplay: boolean): string {
+  switch (state) {
+    case "idle":
+      return isChoosingDisplay ? "Share your screen" : "Waiting for capture"
+    case "recording":
+      return "Recording in progress..."
+    case "stopped":
+      return "Review and submit"
+    case "success":
+      return "Report submitted!"
+    default:
+      return ""
+  }
+}
+
+function IdleStep({
+  isChoosingDisplay,
+  onChooseDisplay,
+}: {
+  isChoosingDisplay: boolean
+  onChooseDisplay: () => Promise<void>
+}) {
+  if (isChoosingDisplay) {
+    return <ChooseDisplayStep onChoose={onChooseDisplay} />
+  }
+
+  return (
+    <p className="text-center text-muted-foreground">
+      No active capture. Start from the extension popup.
+    </p>
   )
 }
 

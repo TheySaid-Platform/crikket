@@ -4,6 +4,7 @@ import type {
   DebuggerLog,
   DebuggerNetworkRequest,
   DebuggerTimelineEntry,
+  ReportTab,
 } from "./types"
 
 const PLAYBACK_HIGHLIGHT_BUCKET_MS = 100
@@ -23,6 +24,7 @@ export function buildActionEntry(
     detail: detailBits.join(" • "),
     timestamp: action.timestamp,
     offset: action.offset,
+    tabId: action.tabId,
   }
 }
 
@@ -34,6 +36,7 @@ export function buildLogEntry(log: DebuggerLog): DebuggerTimelineEntry {
     detail: log.message,
     timestamp: log.timestamp,
     offset: log.offset,
+    tabId: log.tabId,
   }
 }
 
@@ -60,7 +63,66 @@ export function buildNetworkEntry(
     detail,
     timestamp: request.timestamp,
     offset: request.offset,
+    tabId: request.tabId,
   }
+}
+
+// Tabs the extension recorded for this report, in the order they joined.
+export function getReportTabs(metadata: unknown): ReportTab[] {
+  if (!(isRecord(metadata) && Array.isArray(metadata.tabs))) {
+    return []
+  }
+
+  const tabs: ReportTab[] = []
+  for (const candidate of metadata.tabs) {
+    if (!isRecord(candidate) || typeof candidate.tabId !== "number") {
+      continue
+    }
+
+    const tabId = candidate.tabId
+    if (tabs.some((tab) => tab.tabId === tabId)) {
+      continue
+    }
+
+    tabs.push({
+      tabId,
+      label: `Tab ${tabs.length + 1}`,
+      title: asString(candidate.title),
+      url: asString(candidate.url),
+    })
+  }
+
+  return tabs
+}
+
+export function formatReportTabName(tab: ReportTab): string {
+  let host: string | null = null
+  if (tab.url) {
+    try {
+      host = new URL(tab.url).host
+    } catch {
+      host = null
+    }
+  }
+
+  const name = tab.title ?? host
+  return name ? `${tab.label} · ${name}` : tab.label
+}
+
+export function labelEntriesByTab(
+  entries: DebuggerTimelineEntry[],
+  tabs: ReportTab[]
+): DebuggerTimelineEntry[] {
+  if (tabs.length < 2) {
+    return entries
+  }
+
+  const labelsByTabId = new Map(tabs.map((tab) => [tab.tabId, tab.label]))
+  return entries.map((entry) => {
+    const tabLabel =
+      entry.tabId === null ? undefined : labelsByTabId.get(entry.tabId)
+    return tabLabel ? { ...entry, tabLabel } : entry
+  })
 }
 
 export function applyVideoOffsetFallback(
@@ -149,6 +211,10 @@ function safeParseUrl(value: string): URL | null {
     )
     return null
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function asString(value: unknown): string | null {

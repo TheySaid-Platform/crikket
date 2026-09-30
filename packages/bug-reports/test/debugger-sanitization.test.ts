@@ -132,4 +132,51 @@ describe("persistBugReportDebuggerData", () => {
     expect(request?.requestBody).toBe("binarydata")
     expect(request?.responseBody).toBe("ok")
   })
+
+  it("stores the source tab of each event and leaves it empty for old reports", async () => {
+    const timestamp = new Date().toISOString()
+
+    const result = await persistBugReportDebuggerData("br_456", {
+      actions: [
+        {
+          type: "tab-switch",
+          target: "tab",
+          timestamp,
+          offset: 10,
+          tabId: 2,
+          pageUrl: "https://accounts.example.com/login",
+        },
+      ],
+      logs: [{ level: "log", message: "legacy log", timestamp, offset: 0 }],
+      networkRequests: [
+        {
+          method: "POST",
+          url: "https://accounts.example.com/token",
+          timestamp,
+          offset: 20,
+          tabId: 2,
+          pageUrl: "https://accounts.example.com/login",
+        },
+      ],
+    })
+
+    expect(result.warnings).toBeEmpty()
+
+    const action = insertedRows.find((row) => row.type === "tab-switch")
+    expect(action).toMatchObject({
+      tabId: 2,
+      pageUrl: "https://accounts.example.com/login",
+    })
+
+    const request = insertedRows.find(
+      (row) => row.url === "https://accounts.example.com/token"
+    )
+    expect(request).toMatchObject({
+      tabId: 2,
+      pageUrl: "https://accounts.example.com/login",
+    })
+
+    const log = insertedRows.find((row) => row.message === "legacy log")
+    expect(log).toMatchObject({ tabId: null, pageUrl: null })
+  })
 })

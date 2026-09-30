@@ -65,7 +65,7 @@ export function registerDebuggerBackgroundListeners(): void {
           return
         }
 
-        await store.appendPageEvents(tabId, events)
+        await store.appendPageEvents(tabId, events, sender.tab?.url)
       }
 
       switch (message.type) {
@@ -117,9 +117,21 @@ export function registerDebuggerBackgroundListeners(): void {
     return true
   })
 
+  const reportTabError = (context: string) => (error: unknown) => {
+    reportNonFatalError(context, error)
+  }
+
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const didTabNavigate =
       changeInfo.status === "loading" || typeof changeInfo.url === "string"
+
+    if (didTabNavigate || typeof changeInfo.title === "string") {
+      store
+        .handleTabUpdated(tab)
+        .catch(
+          reportTabError(`Failed to track debugger tab update for tab ${tabId}`)
+        )
+    }
 
     if (!didTabNavigate) {
       return
@@ -130,20 +142,64 @@ export function registerDebuggerBackgroundListeners(): void {
         ? changeInfo.url
         : (tab.url ?? undefined)
 
-    store.ensureDebuggerScriptForTab(tabId, url).catch((error: unknown) => {
-      reportNonFatalError(
-        `Failed to reinject debugger instrumentation after tab update for tab ${tabId}`,
-        error
+    store
+      .ensureDebuggerScriptForTab(tabId, url)
+      .catch(
+        reportTabError(
+          `Failed to reinject debugger instrumentation after tab update for tab ${tabId}`
+        )
       )
-    })
+  })
+
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => store.handleTabActivated(tab))
+      .catch(
+        reportTabError(
+          `Failed to track debugger tab activation for tab ${tabId}`
+        )
+      )
+  })
+
+  // Switching windows does not fire tabs.onActivated, so treat the focused
+  // window's active tab as the tab the user switched to.
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) {
+      return
+    }
+
+    chrome.tabs
+      .query({ active: true, windowId })
+      .then(async ([tab]) => {
+        if (tab) {
+          await store.handleTabActivated(tab)
+        }
+      })
+      .catch(
+        reportTabError(
+          `Failed to track debugger window focus for window ${windowId}`
+        )
+      )
+  })
+
+  chrome.tabs.onCreated.addListener((tab) => {
+    store
+      .handleTabCreated(tab)
+      .catch(
+        reportTabError(
+          `Failed to track debugger tab creation for tab ${tab.id}`
+        )
+      )
   })
 
   chrome.tabs.onRemoved.addListener((tabId) => {
-    store.discardSessionByTabId(tabId).catch((error: unknown) => {
-      reportNonFatalError(
-        `Failed to discard debugger session for removed tab ${tabId}`,
-        error
+    store
+      .handleTabRemoved(tabId)
+      .catch(
+        reportTabError(
+          `Failed to clean up debugger state for removed tab ${tabId}`
+        )
       )
-    })
   })
 }

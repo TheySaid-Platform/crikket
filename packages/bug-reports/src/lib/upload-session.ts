@@ -105,6 +105,7 @@ function normalizeUploadMetadata(
     pageTitle: metadata?.pageTitle,
     sdkVersion: metadata?.sdkVersion,
     submittedVia: metadata?.submittedVia,
+    tabs: metadata?.tabs,
     thumbnailUrl: metadata?.thumbnailUrl,
   }
 }

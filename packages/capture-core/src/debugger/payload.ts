@@ -25,6 +25,7 @@ export function buildDebuggerSubmissionPayload(
   for (const event of events) {
     const timestamp = new Date(event.timestamp).toISOString()
     const offset = toOffset(event.timestamp, anchorTimestamp)
+    const tabContext = { tabId: event.tabId, pageUrl: event.pageUrl }
 
     if (event.kind === "action") {
       payload.actions.push({
@@ -33,6 +34,7 @@ export function buildDebuggerSubmissionPayload(
         timestamp,
         offset,
         metadata: event.metadata,
+        ...tabContext,
       })
       continue
     }
@@ -44,6 +46,7 @@ export function buildDebuggerSubmissionPayload(
         timestamp,
         offset,
         metadata: event.metadata,
+        ...tabContext,
       })
       continue
     }
@@ -59,6 +62,7 @@ export function buildDebuggerSubmissionPayload(
       responseBody: event.responseBody,
       timestamp,
       offset,
+      ...tabContext,
     })
   }
 

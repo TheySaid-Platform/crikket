@@ -13,6 +13,7 @@ import { Search } from "lucide-react"
 import { parseAsString, useQueryState } from "nuqs"
 import { useEffect, useMemo, useRef } from "react"
 
+import { TabBadge } from "../tab-badge"
 import { formatOffset } from "../utils"
 import { NetworkRequestDetails } from "./network-request-details"
 import { EmptyState } from "./panel-sections"
@@ -245,6 +246,9 @@ export function NetworkRequestsPanel({
                           {parsed?.host ?? "Unknown host"}
                         </span>
                         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                          {entry.tabLabel ? (
+                            <TabBadge label={entry.tabLabel} />
+                          ) : null}
                           {typeof duration === "number" && (
                             <span>{duration}ms</span>
                           )}

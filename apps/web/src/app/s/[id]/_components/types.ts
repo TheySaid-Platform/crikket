@@ -23,6 +23,16 @@ export interface DebuggerTimelineEntry {
   detail: string
   timestamp: string
   offset: number | null
+  tabId: number | null
+  // Only set when the report spans more than one tab.
+  tabLabel?: string
+}
+
+export interface ReportTab {
+  tabId: number
+  label: string
+  title: string | null
+  url: string | null
 }
 
 export interface DeviceInfo {

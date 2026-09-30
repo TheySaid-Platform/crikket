@@ -52,6 +52,29 @@ describe("debugger retention regression", () => {
     ])
   })
 
+  it("keeps the same request from two different tabs", () => {
+    const events: DebuggerEvent[] = []
+
+    appendNetworkEventWithDedup(events, {
+      kind: "network",
+      timestamp: 1000,
+      method: "GET",
+      url: "https://example.com/api/me",
+      status: 200,
+      tabId: 1,
+    })
+    appendNetworkEventWithDedup(events, {
+      kind: "network",
+      timestamp: 1100,
+      method: "GET",
+      url: "https://example.com/api/me",
+      status: 200,
+      tabId: 2,
+    })
+
+    expect(events.map((event) => event.tabId)).toEqual([1, 2])
+  })
+
   it("deduplicates repeated navigation actions for the same url", () => {
     const events: DebuggerEvent[] = []
 

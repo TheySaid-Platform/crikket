@@ -1,5 +1,6 @@
 import { cn } from "@crikket/ui/lib/utils"
 import { type ReactNode, useEffect, useMemo, useRef } from "react"
+import { TabBadge } from "./tab-badge"
 import type { DebuggerTimelineEntry } from "./types"
 import { formatOffset } from "./utils"
 
@@ -81,11 +82,14 @@ export function TimelineList({
               >
                 {entry.label}
               </span>
-              {typeof entry.offset === "number" && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {formatOffset(entry.offset)}
-                </span>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {entry.tabLabel ? <TabBadge label={entry.tabLabel} /> : null}
+                {typeof entry.offset === "number" && (
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {formatOffset(entry.offset)}
+                  </span>
+                )}
+              </div>
             </div>
             <p className="line-clamp-2 break-all font-mono text-muted-foreground text-xs">
               {entry.detail}

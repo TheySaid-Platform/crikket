@@ -1,5 +1,15 @@
 export type CaptureContext = { title?: string; url?: string }
 
+// "tab" records one tab with tabCapture; "display" records the full screen, so
+// the video follows the user across tabs.
+export type VideoSource = "tab" | "display"
+export const VIDEO_SOURCE_QUERY_PARAM = "videoSource"
+
+export const readVideoSourceFromSearch = (search: string): VideoSource =>
+  new URLSearchParams(search).get(VIDEO_SOURCE_QUERY_PARAM) === "display"
+    ? "display"
+    : "tab"
+
 export const CAPTURE_CONTEXT_STORAGE_KEY = "captureContext"
 export const CAPTURE_TAB_ID_STORAGE_KEY = "captureTabId"
 export const RECORDING_IN_PROGRESS_STORAGE_KEY = "recordingInProgress"

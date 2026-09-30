@@ -19,7 +19,14 @@ export type DebuggerActionType =
   | "keydown"
   | "navigation"
 
-export interface DebuggerActionEvent {
+// Which browser tab an event came from. Set by the background worker, never
+// trusted from the page.
+export interface DebuggerEventTabContext {
+  tabId?: number
+  pageUrl?: string
+}
+
+export interface DebuggerActionEvent extends DebuggerEventTabContext {
   kind: "action"
   timestamp: number
   actionType: DebuggerActionType | string
@@ -27,7 +34,7 @@ export interface DebuggerActionEvent {
   metadata?: Record<string, unknown>
 }
 
-export interface DebuggerConsoleEvent {
+export interface DebuggerConsoleEvent extends DebuggerEventTabContext {
   kind: "console"
   timestamp: number
   level: "log" | "info" | "warn" | "error" | "debug"
@@ -35,7 +42,7 @@ export interface DebuggerConsoleEvent {
   metadata?: Record<string, unknown>
 }
 
-export interface DebuggerNetworkEvent {
+export interface DebuggerNetworkEvent extends DebuggerEventTabContext {
   kind: "network"
   timestamp: number
   method: string
@@ -53,42 +60,56 @@ export type DebuggerEvent =
   | DebuggerConsoleEvent
   | DebuggerNetworkEvent
 
+export interface DebuggerSessionTab {
+  tabId: number
+  url?: string
+  title?: string
+  joinedAt: number
+}
+
 export interface DebuggerSessionSnapshot {
   sessionId: string
   captureTabId: number
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }
 
 export interface BugReportDebuggerPayload {
-  actions: Array<{
-    type: string
-    target?: string
-    timestamp: string
-    offset: number | null
-    metadata?: Record<string, unknown>
-  }>
-  logs: Array<{
-    level: "log" | "info" | "warn" | "error" | "debug"
-    message: string
-    timestamp: string
-    offset: number | null
-    metadata?: Record<string, unknown>
-  }>
-  networkRequests: Array<{
-    method: string
-    url: string
-    status?: number
-    duration?: number
-    requestHeaders?: Record<string, string>
-    responseHeaders?: Record<string, string>
-    requestBody?: string
-    responseBody?: string
-    timestamp: string
-    offset: number | null
-  }>
+  actions: Array<
+    DebuggerEventTabContext & {
+      type: string
+      target?: string
+      timestamp: string
+      offset: number | null
+      metadata?: Record<string, unknown>
+    }
+  >
+  logs: Array<
+    DebuggerEventTabContext & {
+      level: "log" | "info" | "warn" | "error" | "debug"
+      message: string
+      timestamp: string
+      offset: number | null
+      metadata?: Record<string, unknown>
+    }
+  >
+  networkRequests: Array<
+    DebuggerEventTabContext & {
+      method: string
+      url: string
+      status?: number
+      duration?: number
+      requestHeaders?: Record<string, string>
+      responseHeaders?: Record<string, string>
+      requestBody?: string
+      responseBody?: string
+      timestamp: string
+      offset: number | null
+    }
+  >
 }
 
 export interface DebuggerStartSessionResponse {
@@ -181,5 +202,9 @@ export interface StoredDebuggerSession {
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  // The extension page that records this session. Closing it discards the
+  // session, since nothing can submit it anymore.
+  recorderTabId: number | null
+  tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }
