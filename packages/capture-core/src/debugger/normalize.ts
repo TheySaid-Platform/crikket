@@ -1,9 +1,15 @@
 import {
   MAX_NETWORK_BODY_LENGTH,
+  MAX_TAB_TITLE_LENGTH,
   MAX_TEXT_LENGTH,
   MAX_URL_LENGTH,
 } from "./constants"
-import type { DebuggerEvent, StoredDebuggerSession } from "./types"
+import type {
+  DebuggerEvent,
+  DebuggerEventTabContext,
+  DebuggerSessionTab,
+  StoredDebuggerSession,
+} from "./types"
 
 export interface StoredReplayBuffer {
   tabId: number
@@ -24,6 +30,10 @@ export function normalizeStoredSession(
     value.recordingStartedAt === null
       ? null
       : asOptionalNumber(value.recordingStartedAt)
+  const recorderTabId = asOptionalNumber(value.recorderTabId)
+  const recordingStoppedAt = asOptionalNumber(value.recordingStoppedAt)
+  const activeTabId = asOptionalNumber(value.activeTabId)
+  const lastSwitchTabId = asOptionalNumber(value.lastSwitchTabId)
 
   if (!sessionId || captureTabId === undefined || startedAt === undefined) {
     return null
@@ -37,14 +47,56 @@ export function normalizeStoredSession(
     ? value.events.map(normalizeDebuggerEvent).filter(isDefined)
     : []
 
+  // Sessions stored before multi-tab capture only know their capture tab.
+  const tabs = Array.isArray(value.tabs)
+    ? value.tabs.map(normalizeSessionTab).filter(isDefined)
+    : []
+  if (!tabs.some((tab) => tab.tabId === captureTabId)) {
+    tabs.unshift({ tabId: captureTabId, joinedAt: startedAt })
+  }
+
   return {
     sessionId,
     captureTabId,
     captureType,
     startedAt,
     recordingStartedAt: recordingStartedAt ?? null,
+    recordingStoppedAt: recordingStoppedAt ?? null,
+    followTabs: value.followTabs === true,
+    recorderTabId: recorderTabId ?? null,
+    activeTabId: activeTabId ?? null,
+    lastSwitchTabId: lastSwitchTabId ?? null,
+    tabs,
     events,
   }
+}
+
+function normalizeSessionTab(value: unknown): DebuggerSessionTab | null {
+  if (!isRecord(value)) return null
+
+  const tabId = asOptionalNumber(value.tabId)
+  const joinedAt = asOptionalNumber(value.joinedAt)
+  if (tabId === undefined || joinedAt === undefined) return null
+
+  return {
+    tabId,
+    url: asOptionalString(value.url, MAX_URL_LENGTH),
+    title: asOptionalString(value.title, MAX_TAB_TITLE_LENGTH),
+    joinedAt,
+  }
+}
+
+function normalizeTabContext(
+  value: Record<string, unknown>
+): DebuggerEventTabContext {
+  const tabId = asOptionalNumber(value.tabId)
+  const pageUrl = asOptionalString(value.pageUrl, MAX_URL_LENGTH)
+  const context: DebuggerEventTabContext = {}
+
+  if (tabId !== undefined && tabId >= 0) context.tabId = tabId
+  if (pageUrl) context.pageUrl = pageUrl
+
+  return context
 }
 
 export function normalizeDebuggerEvent(value: unknown): DebuggerEvent | null {
@@ -68,6 +120,7 @@ export function normalizeDebuggerEvent(value: unknown): DebuggerEvent | null {
       actionType,
       target: asOptionalString(value.target, MAX_TEXT_LENGTH),
       metadata: sanitizeRecord(value.metadata),
+      ...normalizeTabContext(value),
     }
   }
 
@@ -92,6 +145,7 @@ export function normalizeDebuggerEvent(value: unknown): DebuggerEvent | null {
       level,
       message,
       metadata: sanitizeRecord(value.metadata),
+      ...normalizeTabContext(value),
     }
   }
 
@@ -110,6 +164,8 @@ export function normalizeDebuggerEvent(value: unknown): DebuggerEvent | null {
     responseHeaders: sanitizeHeaders(value.responseHeaders),
     requestBody: asOptionalString(value.requestBody, MAX_NETWORK_BODY_LENGTH),
     responseBody: asOptionalString(value.responseBody, MAX_NETWORK_BODY_LENGTH),
+    failure: asOptionalString(value.failure, 120),
+    ...normalizeTabContext(value),
   }
 }
 

@@ -13,11 +13,12 @@ import { Search } from "lucide-react"
 import { parseAsString, useQueryState } from "nuqs"
 import { useEffect, useMemo, useRef } from "react"
 
+import { TabBadge } from "../tab-badge"
 import { formatOffset } from "../utils"
 import { NetworkRequestDetails } from "./network-request-details"
 import { EmptyState } from "./panel-sections"
 import type { NetworkRequestsPanelProps } from "./types"
-import { safeParseUrl, statusTone } from "./utils"
+import { failureLabel, safeParseUrl, statusTone } from "./utils"
 
 const REQUEST_LIST_DEFAULT_HEIGHT = "300px"
 const REQUEST_LIST_MIN_HEIGHT = "190px"
@@ -229,15 +230,24 @@ export function NetworkRequestsPanel({
                         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
                           {primaryText}
                         </span>
-                        {status !== null && (
+                        {request?.failure ? (
                           <span
-                            className={cn(
-                              "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                              statusTone(status)
-                            )}
+                            className="rounded bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] text-red-700 dark:text-red-300"
+                            title={request.failure}
                           >
-                            {status}
+                            {failureLabel(request.failure)}
                           </span>
+                        ) : (
+                          status !== null && (
+                            <span
+                              className={cn(
+                                "rounded px-1.5 py-0.5 font-mono text-[10px]",
+                                statusTone(status)
+                              )}
+                            >
+                              {status}
+                            </span>
+                          )
                         )}
                       </div>
                       <div className="flex items-center justify-between gap-2">
@@ -245,6 +255,9 @@ export function NetworkRequestsPanel({
                           {parsed?.host ?? "Unknown host"}
                         </span>
                         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                          {entry.tabLabel ? (
+                            <TabBadge label={entry.tabLabel} />
+                          ) : null}
                           {typeof duration === "number" && (
                             <span>{duration}ms</span>
                           )}

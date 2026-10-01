@@ -3,7 +3,15 @@ import {
   hasDebuggerPayloadData,
 } from "@crikket/capture-core/debugger/payload"
 import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
-import type { BugReportDebuggerPayload } from "@crikket/capture-core/debugger/types"
+import {
+  findFirstReportPage,
+  type ReportPage,
+  suggestReportTitle,
+} from "@crikket/capture-core/debugger/report-title"
+import type {
+  BugReportDebuggerPayload,
+  DebuggerSessionTab,
+} from "@crikket/capture-core/debugger/types"
 import { env } from "@crikket/env/extension"
 import type { Priority } from "@crikket/shared/constants/priorities"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
@@ -15,7 +23,8 @@ import {
   CardTitle,
 } from "@crikket/ui/components/ui/card"
 import { AlertCircle } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ChooseDisplayStep } from "@/components/choose-display-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
 import { SuccessStep } from "@/components/success-step"
@@ -29,14 +38,20 @@ import {
   discardDebuggerSession,
   getDebuggerSessionSnapshot,
   markDebuggerRecordingStarted,
+  markDebuggerRecordingStopped,
 } from "@/lib/bug-report-debugger/client"
 import { submitBugReportWithUploads } from "@/lib/bug-report-upload"
+import {
+  type CaptureContext,
+  readVideoSourceFromSearch,
+} from "@/lib/capture-context"
 import {
   buildCaptureContextSubmissionData,
   type DebuggerCaptureSummary,
   dedupeMessages,
   EMPTY_DEBUGGER_SUMMARY,
   getDebuggerCaptureSummary,
+  getReportedTabs,
   getSubmissionErrorMessage,
   isUnauthorizedSubmissionError,
   normalizeOptionalText,
@@ -49,6 +64,9 @@ interface DebuggerSubmissionInput {
   sessionId: string | null
   payload: BugReportDebuggerPayload | undefined
   summary: DebuggerCaptureSummary
+  tabs: DebuggerSessionTab[]
+  suggestedTitle: string | null
+  firstPage: ReportPage | null
   warnings: string[]
 }
 
@@ -64,10 +82,16 @@ function App() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submissionWarnings, setSubmissionWarnings] = useState<string[]>([])
   const [preSubmitWarnings, setPreSubmitWarnings] = useState<string[]>([])
+  const [debuggerTitle, setDebuggerTitle] = useState<string | null>(null)
   const [debuggerSummary, setDebuggerSummary] =
     useState<DebuggerCaptureSummary>(EMPTY_DEBUGGER_SUMMARY)
   const debuggerSessionId = useMemo(
     () => readDebuggerSessionIdFromSearch(window.location.search),
+    []
+  )
+
+  const videoSource = useMemo(
+    () => readVideoSourceFromSearch(window.location.search),
     []
   )
 
@@ -110,6 +134,9 @@ function App() {
         sessionId: null,
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
+        tabs: [],
+        suggestedTitle: null,
+        firstPage: null,
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -132,6 +159,9 @@ function App() {
         sessionId,
         payload: undefined,
         summary: EMPTY_DEBUGGER_SUMMARY,
+        tabs: [],
+        suggestedTitle: null,
+        firstPage: null,
         warnings,
       } satisfies DebuggerSubmissionInput
     }
@@ -154,12 +184,37 @@ function App() {
       sessionId,
       payload: hasPayloadData ? payload : undefined,
       summary,
+      tabs: getReportedTabs(snapshot.tabs, snapshot.captureTabId, payload),
+      suggestedTitle: suggestReportTitle(snapshot),
+      firstPage: findFirstReportPage(snapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
   }, [debuggerSessionId])
 
+  // When the video ended. Sent once, before the report is built, so the
+  // background stops following tabs and drops later events.
+  const recordingStoppedAtRef = useRef<number | null>(null)
+  const markStoppedPromiseRef = useRef<Promise<void> | null>(null)
+  const markRecordingStopped = useCallback((): Promise<void> => {
+    if (captureType !== "video" || !debuggerSessionId) {
+      return Promise.resolve()
+    }
+
+    markStoppedPromiseRef.current ??= markDebuggerRecordingStopped({
+      sessionId: debuggerSessionId,
+      recordingStoppedAt: recordingStoppedAtRef.current ?? Date.now(),
+    }).catch((error: unknown) => {
+      reportNonFatalError(
+        `Failed to mark debugger recording stop for session ${debuggerSessionId}`,
+        error
+      )
+    })
+    return markStoppedPromiseRef.current
+  }, [captureType, debuggerSessionId])
+
   const handleStopRecording = useCallback(async () => {
     const stoppedAt = Date.now()
+    recordingStoppedAtRef.current ??= stoppedAt
     await stopCapture()
     if (startTime) {
       setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
@@ -174,7 +229,7 @@ function App() {
   })
 
   const startVideoCapture = useCallback(async () => {
-    const success = await startCapture()
+    const success = await startCapture(videoSource)
     if (success) {
       const startedAt = Date.now()
       const sessionId = debuggerSessionId
@@ -194,7 +249,7 @@ function App() {
       setRecordedDurationMs(null)
       setState("recording")
     }
-  }, [debuggerSessionId, startCapture])
+  }, [debuggerSessionId, startCapture, videoSource])
 
   const handleStartCapture = useCallback(async () => {
     if (captureType === "screenshot") {
@@ -211,6 +266,8 @@ function App() {
 
   useEffect(() => {
     if (state === "recording" && recordedBlob) {
+      // Chrome's "Stop sharing" ended the video.
+      recordingStoppedAtRef.current ??= Date.now()
       if (startTime) {
         setRecordedDurationMs(Math.max(0, Date.now() - startTime))
       }
@@ -226,13 +283,15 @@ function App() {
 
     let isCancelled = false
 
-    getDebuggerSubmissionInput()
+    markRecordingStopped()
+      .then(() => getDebuggerSubmissionInput())
       .then((debuggerInput) => {
         if (isCancelled) {
           return
         }
 
         setDebuggerSummary(debuggerInput.summary)
+        setDebuggerTitle(debuggerInput.suggestedTitle)
         setPreSubmitWarnings(debuggerInput.warnings)
       })
       .catch((error: unknown) => {
@@ -253,7 +312,7 @@ function App() {
     return () => {
       isCancelled = true
     }
-  }, [getDebuggerSubmissionInput, state])
+  }, [getDebuggerSubmissionInput, markRecordingStopped, state])
 
   useRecorderInit({
     onCaptureTypeChange: setCaptureType,
@@ -268,6 +327,7 @@ function App() {
 
   const handleReset = () => {
     resetCapture()
+    setDebuggerTitle(null)
     setState("idle")
     setResultUrl("")
     setSubmitError(null)
@@ -305,9 +365,11 @@ function App() {
               recordedDurationMs ?? (startTime ? Date.now() - startTime : 0)
             )
           : 0
+      await markRecordingStopped()
       const debuggerSubmission = await getDebuggerSubmissionInput()
-      const captureContextSubmissionData =
-        buildCaptureContextSubmissionData(captureContext)
+      const captureContextSubmissionData = buildCaptureContextSubmissionData(
+        getReportPageContext(captureContext, debuggerSubmission.firstPage)
+      )
       const warnings = [
         ...debuggerSubmission.warnings,
         ...captureContextSubmissionData.warnings,
@@ -324,6 +386,11 @@ function App() {
           duration: formatDuration(durationMs),
           durationMs,
           pageTitle: captureContextSubmissionData.normalizedPageTitle,
+          tabs: debuggerSubmission.tabs.map((tab) => ({
+            tabId: tab.tabId,
+            url: tab.url,
+            title: tab.title,
+          })),
         },
         deviceInfo: getDeviceInfo(),
         debuggerPayload: debuggerSubmission.payload,
@@ -358,7 +425,8 @@ function App() {
 
   const activeBlob = captureType === "video" ? recordedBlob : screenshotBlob
   const suggestedTitle =
-    captureContext.title?.trim() ||
+    debuggerTitle ||
+    (isWebPageUrl(captureContext.url) ? captureContext.title?.trim() : "") ||
     (captureType === "video" ? "Video bug report" : "Screenshot bug report")
   const previewUrl = useMemo(() => {
     if (!activeBlob) return null
@@ -366,6 +434,7 @@ function App() {
   }, [activeBlob])
 
   const error = captureError || submitError
+  const isChoosingDisplay = captureType === "video" && videoSource === "display"
 
   useEffect(() => {
     if (state === "recording") {
@@ -384,10 +453,7 @@ function App() {
             Crikket Bug Report
           </CardTitle>
           <CardDescription className="text-sm">
-            {state === "idle" && "Waiting for capture"}
-            {state === "recording" && "Recording in progress..."}
-            {state === "stopped" && "Review and submit"}
-            {state === "success" && "Report submitted!"}
+            {getStatusLabel(state, isChoosingDisplay)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 px-6 py-6">
@@ -399,9 +465,10 @@ function App() {
           ) : null}
 
           {state === "idle" ? (
-            <p className="text-center text-muted-foreground">
-              No active capture. Start from the extension popup.
-            </p>
+            <IdleStep
+              isChoosingDisplay={isChoosingDisplay}
+              onChooseDisplay={handleStartCapture}
+            />
           ) : null}
 
           {state === "recording" ? (
@@ -442,6 +509,56 @@ function App() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function isWebPageUrl(url: string | undefined): boolean {
+  return Boolean(url?.startsWith("http://") || url?.startsWith("https://"))
+}
+
+// A recording started on a new-tab or other browser page reports the first
+// website the user went to instead.
+function getReportPageContext(
+  captureContext: CaptureContext,
+  firstPage: ReportPage | null
+): CaptureContext {
+  if (isWebPageUrl(captureContext.url) || !firstPage) {
+    return captureContext
+  }
+
+  return { url: firstPage.url, title: firstPage.title }
+}
+
+function getStatusLabel(state: State, isChoosingDisplay: boolean): string {
+  switch (state) {
+    case "idle":
+      return isChoosingDisplay ? "Share your screen" : "Waiting for capture"
+    case "recording":
+      return "Recording in progress..."
+    case "stopped":
+      return "Review and submit"
+    case "success":
+      return "Report submitted!"
+    default:
+      return ""
+  }
+}
+
+function IdleStep({
+  isChoosingDisplay,
+  onChooseDisplay,
+}: {
+  isChoosingDisplay: boolean
+  onChooseDisplay: () => Promise<void>
+}) {
+  if (isChoosingDisplay) {
+    return <ChooseDisplayStep onChoose={onChooseDisplay} />
+  }
+
+  return (
+    <p className="text-center text-muted-foreground">
+      No active capture. Start from the extension popup.
+    </p>
   )
 }
 

@@ -94,6 +94,14 @@ describe("debugger normalization regression", () => {
       captureType: "video",
       startedAt: 1000,
       recordingStartedAt: 1500,
+      recordingStoppedAt: null,
+      // Older stored sessions never follow tabs.
+      followTabs: false,
+      recorderTabId: null,
+      activeTabId: null,
+      lastSwitchTabId: null,
+      // Sessions stored before multi-tab capture fall back to the capture tab.
+      tabs: [{ tabId: 42, joinedAt: 1000 }],
       events: [
         {
           kind: "action",
@@ -120,6 +128,77 @@ describe("debugger normalization regression", () => {
         },
       ],
     })
+  })
+
+  it("keeps tab context on events and stored session tabs", () => {
+    expect(
+      normalizeDebuggerEvent({
+        kind: "console",
+        timestamp: 1000,
+        level: "log",
+        message: "hello",
+        tabId: 7.8,
+        pageUrl: " https://example.com/app ",
+      })
+    ).toEqual({
+      kind: "console",
+      timestamp: 1000,
+      level: "log",
+      message: "hello",
+      metadata: undefined,
+      tabId: 7,
+      pageUrl: "https://example.com/app",
+    })
+
+    expect(
+      normalizeDebuggerEvent({
+        kind: "console",
+        timestamp: 1000,
+        level: "log",
+        message: "hello",
+        tabId: -1,
+      })
+    ).not.toHaveProperty("tabId")
+
+    const session = normalizeStoredSession({
+      sessionId: "session_2",
+      captureTabId: 1,
+      captureType: "video",
+      startedAt: 1000,
+      recordingStartedAt: null,
+      recorderTabId: 9,
+      tabs: [
+        { tabId: 1, url: "https://example.com", title: "App", joinedAt: 1000 },
+        { tabId: 2, url: "https://accounts.example.com", joinedAt: 1500 },
+        { tabId: "bad", joinedAt: 1600 },
+      ],
+      events: [],
+    })
+
+    expect(session?.recorderTabId).toBe(9)
+    expect(session?.followTabs).toBe(false)
+    expect(session?.tabs).toEqual([
+      { tabId: 1, url: "https://example.com", title: "App", joinedAt: 1000 },
+      {
+        tabId: 2,
+        url: "https://accounts.example.com",
+        title: undefined,
+        joinedAt: 1500,
+      },
+    ])
+  })
+
+  it("keeps why a network request failed", () => {
+    expect(
+      normalizeDebuggerEvent({
+        kind: "network",
+        timestamp: 1000,
+        method: "GET",
+        url: "https://api.example.com/data",
+        status: 0,
+        failure: "Likely CORS error",
+      })
+    ).toMatchObject({ status: 0, failure: "Likely CORS error" })
   })
 
   it("normalizes replay buffers and rejects invalid storage data", () => {

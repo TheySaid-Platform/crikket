@@ -14,7 +14,11 @@ export function buildDebuggerSubmissionPayload(
   snapshot: DebuggerSessionSnapshot
 ): BugReportDebuggerPayload {
   const anchorTimestamp = snapshot.recordingStartedAt ?? snapshot.startedAt
-  const events = [...snapshot.events].sort((a, b) => a.timestamp - b.timestamp)
+  const stoppedAt = snapshot.recordingStoppedAt ?? null
+  // What happens while the user fills in the form is not part of the bug.
+  const events = snapshot.events
+    .filter((event) => stoppedAt === null || event.timestamp <= stoppedAt)
+    .sort((a, b) => a.timestamp - b.timestamp)
 
   const payload: BugReportDebuggerPayload = {
     actions: [],
@@ -25,6 +29,7 @@ export function buildDebuggerSubmissionPayload(
   for (const event of events) {
     const timestamp = new Date(event.timestamp).toISOString()
     const offset = toOffset(event.timestamp, anchorTimestamp)
+    const tabContext = { tabId: event.tabId, pageUrl: event.pageUrl }
 
     if (event.kind === "action") {
       payload.actions.push({
@@ -33,6 +38,7 @@ export function buildDebuggerSubmissionPayload(
         timestamp,
         offset,
         metadata: event.metadata,
+        ...tabContext,
       })
       continue
     }
@@ -44,6 +50,7 @@ export function buildDebuggerSubmissionPayload(
         timestamp,
         offset,
         metadata: event.metadata,
+        ...tabContext,
       })
       continue
     }
@@ -57,8 +64,10 @@ export function buildDebuggerSubmissionPayload(
       responseHeaders: event.responseHeaders,
       requestBody: event.requestBody,
       responseBody: event.responseBody,
+      failure: event.failure,
       timestamp,
       offset,
+      ...tabContext,
     })
   }
 

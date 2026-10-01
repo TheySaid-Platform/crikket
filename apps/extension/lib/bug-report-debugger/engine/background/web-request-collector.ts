@@ -198,7 +198,7 @@ export function registerWebRequestCollector(input: CollectorInput): void {
             ),
             requestHeaders: entry?.requestHeaders,
             requestBody: entry?.requestBody,
-            responseBody: details.error,
+            failure: describeFailure(details),
           },
           entry?.tabId ?? details.tabId
         )
@@ -207,6 +207,34 @@ export function registerWebRequestCollector(input: CollectorInput): void {
         reportError("Failed to finalize errored webRequest", error)
       })
   }, URL_FILTER)
+}
+
+// Chrome hides CORS failures from extensions: a blocked fetch/XHR only shows up
+// as a generic net::ERR_FAILED on a cross-origin request. Other causes (a
+// failing service worker, some blocked requests) look the same, hence "Likely".
+function describeFailure(
+  details: chrome.webRequest.OnErrorOccurredDetails
+): string {
+  const isCrossOrigin = (() => {
+    try {
+      return (
+        typeof details.initiator === "string" &&
+        new URL(details.url).origin !== details.initiator
+      )
+    } catch {
+      return false
+    }
+  })()
+
+  if (
+    details.error === "net::ERR_FAILED" &&
+    details.type === "xmlhttprequest" &&
+    isCrossOrigin
+  ) {
+    return "Likely CORS error"
+  }
+
+  return details.error
 }
 
 function headersArrayToRecord(

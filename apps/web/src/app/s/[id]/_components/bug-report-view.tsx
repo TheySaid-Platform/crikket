@@ -14,7 +14,12 @@ import {
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query"
 import { AlertCircle, Edit, Eye, EyeOff, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
+import {
+  parseAsInteger,
+  parseAsString,
+  parseAsStringLiteral,
+  useQueryState,
+} from "nuqs"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { EditBugReportSheet } from "@/components/bug-reports/edit-bug-report-sheet"
@@ -30,6 +35,8 @@ import {
   buildLogEntry,
   buildNetworkEntry,
   getPlaybackEntryIds,
+  getReportTabs,
+  labelEntriesByTab,
 } from "./utils"
 
 interface BugReportViewProps {
@@ -380,6 +387,19 @@ export function BugReportView({ id }: BugReportViewProps) {
     parseAsStringLiteral(SIDEBAR_TABS).withDefault("details")
   )
   const [networkSearch] = useQueryState("networkSearch", parseAsString)
+  const [pageTabParam, setPageTabParam] = useQueryState(
+    "pageTab",
+    parseAsInteger
+  )
+  const reportTabs = useMemo(
+    () => getReportTabs(data?.metadata),
+    [data?.metadata]
+  )
+  const selectedTabId =
+    reportTabs.length > 1 &&
+    reportTabs.some((tab) => tab.tabId === pageTabParam)
+      ? pageTabParam
+      : null
 
   const shouldOpenDebuggerTimelineTabByDefault =
     activeTab === "actions" || activeTab === "console"
@@ -409,20 +429,31 @@ export function BugReportView({ id }: BugReportViewProps) {
         page: pageParam,
         perPage: NETWORK_REQUESTS_PAGE_SIZE,
         search: networkSearch ?? undefined,
+        tabId: selectedTabId ?? undefined,
       }),
-      queryKey: ["networkRequests", id, networkSearch ?? ""],
+      queryKey: ["networkRequests", id, networkSearch ?? "", selectedTabId],
       getNextPageParam: (lastPage) =>
         lastPage.pagination.hasNextPage
           ? lastPage.pagination.page + 1
           : undefined,
-      enabled: Boolean(id) && shouldLoadNetworkRequests,
+      // Wait for the report so the tab filter is known before the first page.
+      enabled: Boolean(id) && Boolean(data) && shouldLoadNetworkRequests,
     })
   )
 
-  const debuggerEvents = debuggerEventsQuery.data ?? {
-    actions: [],
-    logs: [],
-  }
+  const debuggerEvents = useMemo(() => {
+    const events = debuggerEventsQuery.data ?? { actions: [], logs: [] }
+    if (selectedTabId === null) {
+      return events
+    }
+
+    return {
+      actions: events.actions.filter(
+        (action) => action.tabId === selectedTabId
+      ),
+      logs: events.logs.filter((log) => log.tabId === selectedTabId),
+    }
+  }, [debuggerEventsQuery.data, selectedTabId])
 
   const networkRequests = useMemo(() => {
     return networkRequestsQuery.data?.pages.flatMap((page) => page.items) ?? []
@@ -454,27 +485,36 @@ export function BugReportView({ id }: BugReportViewProps) {
 
   const actionEntries = useMemo(
     () =>
-      applyVideoOffsetFallback(
-        debuggerEvents.actions.map(buildActionEntry),
-        showVideo
+      labelEntriesByTab(
+        applyVideoOffsetFallback(
+          debuggerEvents.actions.map(buildActionEntry),
+          showVideo
+        ),
+        reportTabs
       ),
-    [debuggerEvents.actions, showVideo]
+    [debuggerEvents.actions, reportTabs, showVideo]
   )
   const logEntries = useMemo(
     () =>
-      applyVideoOffsetFallback(
-        debuggerEvents.logs.map(buildLogEntry),
-        showVideo
+      labelEntriesByTab(
+        applyVideoOffsetFallback(
+          debuggerEvents.logs.map(buildLogEntry),
+          showVideo
+        ),
+        reportTabs
       ),
-    [debuggerEvents.logs, showVideo]
+    [debuggerEvents.logs, reportTabs, showVideo]
   )
   const networkEntries = useMemo(
     () =>
-      applyVideoOffsetFallback(
-        networkRequests.map(buildNetworkEntry),
-        showVideo
+      labelEntriesByTab(
+        applyVideoOffsetFallback(
+          networkRequests.map(buildNetworkEntry),
+          showVideo
+        ),
+        reportTabs
       ),
-    [networkRequests, showVideo]
+    [networkRequests, reportTabs, showVideo]
   )
 
   const playbackActionEntryIds = useMemo(
@@ -570,6 +610,17 @@ export function BugReportView({ id }: BugReportViewProps) {
     data,
     activeTab,
     onTabChange: handleTabChange,
+    pageTabs: {
+      tabs: reportTabs,
+      selectedTabId,
+      onSelectedTabChange: (tabId: number | null) => {
+        setPageTabParam(tabId, { history: "replace" }).catch(
+          (error: unknown) => {
+            reportNonFatalError("Failed to sync page tab filter", error)
+          }
+        )
+      },
+    },
     timeline: {
       actions: {
         actions: debuggerEvents.actions,

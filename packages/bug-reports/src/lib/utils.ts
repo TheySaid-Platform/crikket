@@ -41,6 +41,7 @@ export const debuggerNetworkRequestsInputSchema = z.object({
     .transform((value) => value.trim())
     .optional()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
+  tabId: z.number().int().nonnegative().optional(),
 })
 
 export const debuggerNetworkRequestPayloadInputSchema = z.object({
@@ -71,6 +72,16 @@ export const metadataInputSchema = z
     pageTitle: z.string().max(300).optional(),
     sdkVersion: z.string().max(40).optional(),
     submittedVia: z.string().max(40).optional(),
+    tabs: z
+      .array(
+        z.object({
+          tabId: z.number().int().nonnegative(),
+          url: z.string().max(4096).optional(),
+          title: z.string().max(300).optional(),
+        })
+      )
+      .max(50)
+      .optional(),
   })
   .optional()
 

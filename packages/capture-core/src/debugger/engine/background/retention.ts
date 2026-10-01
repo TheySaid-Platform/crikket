@@ -24,17 +24,6 @@ export function appendEventWithRetentionPolicy(
   }
 }
 
-export function appendNetworkEventWithDedup(
-  events: DebuggerEvent[],
-  event: Extract<DebuggerEvent, { kind: "network" }>
-): void {
-  if (isLikelyDuplicateNetworkEvent(events, event)) {
-    return
-  }
-
-  appendEventWithRetentionPolicy(events, event)
-}
-
 export function appendActionEventWithDedup(
   events: DebuggerEvent[],
   event: Extract<DebuggerEvent, { kind: "action" }>
@@ -44,38 +33,6 @@ export function appendActionEventWithDedup(
   }
 
   appendEventWithRetentionPolicy(events, event)
-}
-
-function isLikelyDuplicateNetworkEvent(
-  events: DebuggerEvent[],
-  candidate: Extract<DebuggerEvent, { kind: "network" }>
-): boolean {
-  const DUPLICATE_WINDOW_MS = 350
-
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]
-    if (!event || event.kind !== "network") {
-      continue
-    }
-
-    const isSameKey =
-      event.method === candidate.method &&
-      event.url === candidate.url &&
-      (event.status ?? 0) === (candidate.status ?? 0)
-
-    if (!isSameKey) {
-      continue
-    }
-
-    const delta = Math.abs(event.timestamp - candidate.timestamp)
-    if (delta > DUPLICATE_WINDOW_MS) {
-      return false
-    }
-
-    return true
-  }
-
-  return false
 }
 
 function isLikelyDuplicateNavigationEvent(
@@ -97,7 +54,8 @@ function isLikelyDuplicateNavigationEvent(
     if (
       !event ||
       event.kind !== "action" ||
-      event.actionType !== "navigation"
+      event.actionType !== "navigation" ||
+      event.tabId !== candidate.tabId
     ) {
       continue
     }

@@ -45,12 +45,14 @@ export const getBugReportNetworkRequests = o
       countBugReportNetworkRequests({
         bugReportId: input.id,
         search: input.search,
+        tabId: input.tabId,
       }),
       getBugReportNetworkRequestsPage({
         bugReportId: input.id,
         limit,
         offset,
         search: input.search,
+        tabId: input.tabId,
       }),
     ])
 

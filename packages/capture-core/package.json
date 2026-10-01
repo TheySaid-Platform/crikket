@@ -28,6 +28,10 @@
       "types": "./dist/debugger/recorder-session.d.ts",
       "default": "./dist/debugger/recorder-session.js"
     },
+    "./debugger/report-title": {
+      "types": "./dist/debugger/report-title.d.ts",
+      "default": "./dist/debugger/report-title.js"
+    },
     "./debugger/engine/background/retention": {
       "types": "./dist/debugger/engine/background/retention.d.ts",
       "default": "./dist/debugger/engine/background/retention.js"

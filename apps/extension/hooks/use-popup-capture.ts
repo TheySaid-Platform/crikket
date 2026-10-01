@@ -14,9 +14,12 @@ import {
   RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
   RECORDING_IN_PROGRESS_STORAGE_KEY,
   RECORDING_STARTED_AT_STORAGE_KEY,
+  VIDEO_SOURCE_QUERY_PARAM,
 } from "@/lib/capture-context"
 
-export type PopupCaptureType = "video" | "screenshot"
+// "video" records the current tab; "display" records the full screen, following
+// the user across tabs.
+export type PopupCaptureType = "video" | "display" | "screenshot"
 
 const RECORDING_COUNTDOWN_SECONDS = 3
 const ACTIVE_TAB_ERROR_MESSAGE =
@@ -72,6 +75,12 @@ export function usePopupCapture(): UsePopupCaptureReturn {
 
       if (captureType === "screenshot") {
         await startScreenshotCapture({
+          activeTab,
+          captureContext,
+          debuggerSessionId,
+        })
+      } else if (captureType === "display") {
+        await startDisplayCapture({
           activeTab,
           captureContext,
           debuggerSessionId,
@@ -135,8 +144,11 @@ async function initializeDebuggerSession(
 ): Promise<string> {
   const session = await startDebuggerSession({
     captureTabId,
-    captureType,
+    captureType: captureType === "screenshot" ? "screenshot" : "video",
     instantReplayLookbackMs: captureType === "screenshot" ? 10_000 : undefined,
+    // Only Record Full Screen follows the user; Record This Tab keeps to the
+    // tab it records.
+    followTabs: captureType === "display",
   })
 
   return session.sessionId
@@ -204,6 +216,38 @@ async function startVideoCapture(input: {
   const recorderTab = await chrome.tabs.create({
     active: true,
     url: recorderUrl,
+  })
+
+  if (typeof recorderTab.id === "number") {
+    await chrome.storage.local.set({
+      [RECORDER_TAB_ID_STORAGE_KEY]: recorderTab.id,
+    })
+  }
+}
+
+// No countdown here: the user still has to share their screen from the
+// recorder tab, which then takes them back to this tab.
+async function startDisplayCapture(input: {
+  activeTab: ActiveCaptureTab
+  captureContext: CaptureContext
+  debuggerSessionId: string
+}): Promise<void> {
+  await chrome.storage.local.set({
+    [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
+    [CAPTURE_TAB_ID_STORAGE_KEY]: input.activeTab.id,
+  })
+
+  const recorderUrl = new URL(
+    appendDebuggerSessionIdToUrl(
+      chrome.runtime.getURL("/recorder.html?captureType=video"),
+      input.debuggerSessionId
+    )
+  )
+  recorderUrl.searchParams.set(VIDEO_SOURCE_QUERY_PARAM, "display")
+
+  const recorderTab = await chrome.tabs.create({
+    active: true,
+    url: recorderUrl.toString(),
   })
 
   if (typeof recorderTab.id === "number") {

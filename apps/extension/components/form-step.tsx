@@ -99,9 +99,17 @@ export function FormStep({
     debuggerSummary.networkRequests
   const isPrimingVideoDurationRef = useRef(false)
 
+  // The suggested title improves once the recording's logs are read; follow it
+  // until the user types their own.
+  const appliedTitleRef = useRef(initialTitle)
   useEffect(() => {
-    if (!form.state.values.title && initialTitle) {
+    const currentTitle = form.state.values.title
+    if (
+      initialTitle &&
+      (!currentTitle || currentTitle === appliedTitleRef.current)
+    ) {
       form.setFieldValue("title", initialTitle)
+      appliedTitleRef.current = initialTitle
     }
   }, [form, initialTitle])
 

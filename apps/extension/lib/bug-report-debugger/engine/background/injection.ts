@@ -26,6 +26,7 @@ export async function injectDebuggerScriptIntoTab(
     await chrome.scripting.executeScript({
       target: {
         tabId,
+        allFrames: true,
       },
       files: [DEBUGGER_CONTENT_BRIDGE_FILE],
     })
@@ -33,6 +34,7 @@ export async function injectDebuggerScriptIntoTab(
     await chrome.scripting.executeScript({
       target: {
         tabId,
+        allFrames: true,
       },
       world: "MAIN",
       files: [DEBUGGER_PAGE_RUNTIME_FILE],

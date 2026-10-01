@@ -1,3 +1,10 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@crikket/ui/components/ui/select"
 import { Separator } from "@crikket/ui/components/ui/separator"
 import { cn } from "@crikket/ui/lib/utils"
 import { Globe, Info, MousePointerClick, Terminal } from "lucide-react"
@@ -11,8 +18,10 @@ import type {
   DebuggerNetworkRequest,
   DebuggerTimelineEntry,
   DeviceInfo,
+  ReportTab,
   SharedBugReport,
 } from "./types"
+import { formatReportTabName } from "./utils"
 
 export type SidebarTab = "details" | "console" | "network" | "actions"
 
@@ -34,12 +43,19 @@ interface NetworkSidebarState extends TimelineSidebarState {
   onLoadMore: () => void
 }
 
+interface PageTabsState {
+  tabs: ReportTab[]
+  selectedTabId: number | null
+  onSelectedTabChange: (tabId: number | null) => void
+}
+
 interface BugReportSidebarProps {
   bugReportId: string
   data: SharedBugReport
   activeTab: SidebarTab
   tabAction?: ReactNode
   onTabChange: (tab: SidebarTab) => void
+  pageTabs: PageTabsState
   timeline: {
     actions: ActionsSidebarState
     console: TimelineSidebarState
@@ -54,6 +70,7 @@ export function BugReportSidebar({
   activeTab,
   tabAction,
   onTabChange,
+  pageTabs,
   timeline,
   network,
   onEntrySelect,
@@ -92,6 +109,10 @@ export function BugReportSidebar({
         {tabAction ? <div className="shrink-0">{tabAction}</div> : null}
       </div>
 
+      {activeTab !== "details" && pageTabs.tabs.length > 1 ? (
+        <PageTabFilter {...pageTabs} />
+      ) : null}
+
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === "details" && (
@@ -102,6 +123,13 @@ export function BugReportSidebar({
               </h3>
               <div className="grid gap-3 text-sm">
                 <DetailRow className="break-all" label="URL" value={data.url} />
+                {pageTabs.tabs.length > 1 ? (
+                  <DetailRow
+                    className="whitespace-pre-line break-all"
+                    label="Tabs"
+                    value={pageTabs.tabs.map(formatReportTabName).join("\n")}
+                  />
+                ) : null}
                 <DetailRow label="Browser" value={deviceInfo?.browser} />
                 <DetailRow label="OS" value={deviceInfo?.os} />
                 <DetailRow label="Viewport" value={deviceInfo?.viewport} />
@@ -169,6 +197,53 @@ export function BugReportSidebar({
           />
         )}
       </div>
+    </div>
+  )
+}
+
+const ALL_PAGE_TABS_VALUE = "all"
+
+function PageTabFilter({
+  tabs,
+  selectedTabId,
+  onSelectedTabChange,
+}: PageTabsState) {
+  const selectedTab = tabs.find((tab) => tab.tabId === selectedTabId)
+
+  return (
+    <div className="flex items-center gap-2 border-b px-3 py-2">
+      <span className="shrink-0 font-medium text-muted-foreground text-xs">
+        Browser tab
+      </span>
+      <Select
+        onValueChange={(value) => {
+          const tabId = Number(value)
+          onSelectedTabChange(
+            value === ALL_PAGE_TABS_VALUE || !Number.isInteger(tabId)
+              ? null
+              : tabId
+          )
+        }}
+        value={
+          selectedTabId === null ? ALL_PAGE_TABS_VALUE : String(selectedTabId)
+        }
+      >
+        <SelectTrigger className="h-7 min-w-0 flex-1 text-xs" size="sm">
+          <SelectValue>
+            {selectedTab
+              ? formatReportTabName(selectedTab)
+              : `All tabs (${tabs.length})`}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_PAGE_TABS_VALUE}>All tabs</SelectItem>
+          {tabs.map((tab) => (
+            <SelectItem key={tab.tabId} value={String(tab.tabId)}>
+              {formatReportTabName(tab)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }

@@ -1,13 +1,21 @@
+import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { useCallback, useRef, useState } from "react"
-import { readAndClearCaptureTabId } from "@/lib/capture-context"
-import { requestTabCaptureStream } from "@/lib/display-media"
+import {
+  readAndClearCaptureTabId,
+  type VideoSource,
+} from "@/lib/capture-context"
+import {
+  requestDisplayCaptureStream,
+  requestTabCaptureStream,
+  stopCaptureStream,
+} from "@/lib/display-media"
 
 export interface UseScreenCaptureReturn {
   isRecording: boolean
   recordedBlob: Blob | null
   screenshotBlob: Blob | null
   error: string | null
-  startRecording: () => Promise<boolean>
+  startRecording: (source?: VideoSource) => Promise<boolean>
   stopRecording: () => Promise<Blob | null>
   takeScreenshot: () => Promise<Blob | null>
   reset: () => void
@@ -24,73 +32,84 @@ export function useScreenCapture(): UseScreenCaptureReturn {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  // Kept after the first read so a cancelled window picker can be retried.
+  const captureTabIdRef = useRef<number | null>(null)
 
-  const startRecording = useCallback(async (): Promise<boolean> => {
-    try {
-      setError(null)
-      setRecordedBlob(null)
+  const startRecording = useCallback(
+    async (source: VideoSource = "tab"): Promise<boolean> => {
+      try {
+        setError(null)
+        setRecordedBlob(null)
 
-      const captureTabId = await readAndClearCaptureTabId()
-      if (!captureTabId) {
-        throw new Error(
-          "Could not lock the source tab. Please start recording from the extension popup."
+        const captureTabId =
+          captureTabIdRef.current ?? (await readAndClearCaptureTabId())
+        captureTabIdRef.current = captureTabId
+        if (!captureTabId && source === "tab") {
+          throw new Error(
+            "Could not lock the source tab. Please start recording from the extension popup."
+          )
+        }
+
+        const stream =
+          source === "display"
+            ? await requestDisplayCaptureStream()
+            : await requestTabCaptureStream(captureTabId as number)
+
+        // The picker left the user on this recorder tab; take them back to the
+        // page they want to record before the first frames land.
+        if (source === "display" && captureTabId) {
+          await returnToTab(captureTabId)
+        }
+
+        streamRef.current = stream
+
+        const preferredMimeTypes = [
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm;codecs=opus",
+          "video/webm",
+        ]
+        const mimeType =
+          preferredMimeTypes.find((type) =>
+            MediaRecorder.isTypeSupported(type)
+          ) ?? ""
+        const mediaRecorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
         )
-      }
 
-      const stream = await requestTabCaptureStream(captureTabId)
+        mediaRecorderRef.current = mediaRecorder
+        chunksRef.current = []
 
-      streamRef.current = stream
-
-      const preferredMimeTypes = [
-        "video/webm;codecs=vp9,opus",
-        "video/webm;codecs=vp8,opus",
-        "video/webm;codecs=opus",
-        "video/webm",
-      ]
-      const mimeType =
-        preferredMimeTypes.find((type) =>
-          MediaRecorder.isTypeSupported(type)
-        ) ?? ""
-      const mediaRecorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined
-      )
-
-      mediaRecorderRef.current = mediaRecorder
-      chunksRef.current = []
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunksRef.current.push(event.data)
+          }
         }
-      }
 
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "video/webm" })
-        setRecordedBlob(blob)
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunksRef.current, { type: "video/webm" })
+          setRecordedBlob(blob)
+          setIsRecording(false)
+          stopCaptureStream(stream)
+        }
+        stream.getVideoTracks()[0].onended = () => {
+          if (mediaRecorderRef.current?.state === "recording") {
+            mediaRecorderRef.current.stop()
+          }
+        }
+
+        mediaRecorder.start(1000)
+        setIsRecording(true)
+        return true
+      } catch (err) {
+        setError(getStartRecordingErrorMessage(err, source))
         setIsRecording(false)
-
-        for (const track of stream.getTracks()) {
-          track.stop()
-        }
+        return false
       }
-      stream.getVideoTracks()[0].onended = () => {
-        if (mediaRecorderRef.current?.state === "recording") {
-          mediaRecorderRef.current.stop()
-        }
-      }
-
-      mediaRecorder.start(1000)
-      setIsRecording(true)
-      return true
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to start recording"
-      setError(message)
-      setIsRecording(false)
-      return false
-    }
-  }, [])
+    },
+    []
+  )
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {
@@ -108,9 +127,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
         setIsRecording(false)
 
         if (streamRef.current) {
-          for (const track of streamRef.current.getTracks()) {
-            track.stop()
-          }
+          stopCaptureStream(streamRef.current)
         }
 
         resolve(blob)
@@ -186,9 +203,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
       mediaRecorderRef.current.stop()
     }
     if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) {
-        track.stop()
-      }
+      stopCaptureStream(streamRef.current)
     }
   }, [])
 
@@ -204,4 +219,34 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     setRecordedBlob,
     setScreenshotBlob,
   }
+}
+
+const TAB_SWITCH_SETTLE_MS = 300
+
+async function returnToTab(tabId: number): Promise<void> {
+  try {
+    const tab = await chrome.tabs.update(tabId, { active: true })
+    if (typeof tab?.windowId === "number") {
+      await chrome.windows.update(tab.windowId, { focused: true })
+    }
+    await new Promise((resolve) => setTimeout(resolve, TAB_SWITCH_SETTLE_MS))
+  } catch (error) {
+    // The tab may have been closed; recording the window still works.
+    reportNonFatalError(`Failed to return to capture tab ${tabId}`, error)
+  }
+}
+
+function getStartRecordingErrorMessage(
+  error: unknown,
+  source: VideoSource
+): string {
+  if (
+    source === "display" &&
+    error instanceof DOMException &&
+    error.name === "NotAllowedError"
+  ) {
+    return "Screen sharing was cancelled. Share your screen to start recording."
+  }
+
+  return error instanceof Error ? error.message : "Failed to start recording"
 }

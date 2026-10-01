@@ -1,8 +1,10 @@
 import {
   DISCARD_SESSION_MESSAGE,
   ENSURE_PAGE_RUNTIME_MESSAGE,
+  GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
+  MARK_RECORDING_STOPPED_MESSAGE,
   PAGE_BRIDGE_SOURCE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
@@ -10,6 +12,7 @@ import {
 } from "@crikket/capture-core/debugger/constants"
 import { isRecordLike } from "@crikket/capture-core/debugger/normalize"
 import type {
+  DebuggerCaptureState,
   DebuggerContentBridgePayload,
   DebuggerRuntimeMessage,
   DebuggerRuntimeResponse,
@@ -87,6 +90,20 @@ export async function ensureDebuggerPageRuntime(): Promise<void> {
   }
 }
 
+export async function getDebuggerCaptureState(): Promise<DebuggerCaptureState | null> {
+  try {
+    return await sendDebuggerMessage<DebuggerCaptureState>({
+      type: GET_CAPTURE_STATE_MESSAGE,
+      payload: {},
+    })
+  } catch (error) {
+    if (!isExpectedRuntimeDisconnectError(error)) {
+      reportNonFatalError("Failed to read debugger capture state", error)
+    }
+    return null
+  }
+}
+
 export function isDebuggerRuntimeMessage(
   value: unknown
 ): value is DebuggerRuntimeMessage {
@@ -98,11 +115,13 @@ export function isDebuggerRuntimeMessage(
   return (
     messageType === START_SESSION_MESSAGE ||
     messageType === MARK_RECORDING_STARTED_MESSAGE ||
+    messageType === MARK_RECORDING_STOPPED_MESSAGE ||
     messageType === GET_SESSION_SNAPSHOT_MESSAGE ||
     messageType === DISCARD_SESSION_MESSAGE ||
     messageType === PAGE_EVENT_MESSAGE ||
     messageType === PAGE_EVENTS_MESSAGE ||
-    messageType === ENSURE_PAGE_RUNTIME_MESSAGE
+    messageType === ENSURE_PAGE_RUNTIME_MESSAGE ||
+    messageType === GET_CAPTURE_STATE_MESSAGE
   )
 }
 

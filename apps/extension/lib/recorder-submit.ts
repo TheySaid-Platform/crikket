@@ -1,4 +1,7 @@
-import type { BugReportDebuggerPayload } from "@crikket/capture-core/debugger/types"
+import type {
+  BugReportDebuggerPayload,
+  DebuggerSessionTab,
+} from "@crikket/capture-core/debugger/types"
 import { ORPCError } from "@orpc/client"
 
 const MAX_PAGE_TITLE_LENGTH = 300
@@ -57,6 +60,29 @@ export function getDebuggerCaptureSummary(
     logs: payload.logs.length,
     networkRequests: payload.networkRequests.length,
   }
+}
+
+// Tabs worth listing on the report: the capture tab plus any tab that logged
+// something.
+export function getReportedTabs(
+  tabs: DebuggerSessionTab[],
+  captureTabId: number,
+  payload: BugReportDebuggerPayload
+): DebuggerSessionTab[] {
+  const tabIdsWithEvents = new Set<number>()
+  for (const item of [
+    ...payload.actions,
+    ...payload.logs,
+    ...payload.networkRequests,
+  ]) {
+    if (typeof item.tabId === "number") {
+      tabIdsWithEvents.add(item.tabId)
+    }
+  }
+
+  return tabs.filter(
+    (tab) => tab.tabId === captureTabId || tabIdsWithEvents.has(tab.tabId)
+  )
 }
 
 export function dedupeMessages(messages: string[]): string[] {

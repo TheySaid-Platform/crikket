@@ -1,8 +1,10 @@
 import type {
   DISCARD_SESSION_MESSAGE,
   ENSURE_PAGE_RUNTIME_MESSAGE,
+  GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
+  MARK_RECORDING_STOPPED_MESSAGE,
   PAGE_BRIDGE_SOURCE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
@@ -19,7 +21,14 @@ export type DebuggerActionType =
   | "keydown"
   | "navigation"
 
-export interface DebuggerActionEvent {
+// Which browser tab an event came from. Set by the background worker, never
+// trusted from the page.
+export interface DebuggerEventTabContext {
+  tabId?: number
+  pageUrl?: string
+}
+
+export interface DebuggerActionEvent extends DebuggerEventTabContext {
   kind: "action"
   timestamp: number
   actionType: DebuggerActionType | string
@@ -27,7 +36,7 @@ export interface DebuggerActionEvent {
   metadata?: Record<string, unknown>
 }
 
-export interface DebuggerConsoleEvent {
+export interface DebuggerConsoleEvent extends DebuggerEventTabContext {
   kind: "console"
   timestamp: number
   level: "log" | "info" | "warn" | "error" | "debug"
@@ -35,7 +44,7 @@ export interface DebuggerConsoleEvent {
   metadata?: Record<string, unknown>
 }
 
-export interface DebuggerNetworkEvent {
+export interface DebuggerNetworkEvent extends DebuggerEventTabContext {
   kind: "network"
   timestamp: number
   method: string
@@ -46,6 +55,8 @@ export interface DebuggerNetworkEvent {
   responseHeaders?: Record<string, string>
   requestBody?: string
   responseBody?: string
+  // Why the request failed, e.g. "Likely CORS error" or "net::ERR_ABORTED".
+  failure?: string
 }
 
 export type DebuggerEvent =
@@ -53,42 +64,59 @@ export type DebuggerEvent =
   | DebuggerConsoleEvent
   | DebuggerNetworkEvent
 
+export interface DebuggerSessionTab {
+  tabId: number
+  url?: string
+  title?: string
+  joinedAt: number
+}
+
 export interface DebuggerSessionSnapshot {
   sessionId: string
   captureTabId: number
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  // Events after this are not part of the report.
+  recordingStoppedAt?: number | null
+  tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }
 
 export interface BugReportDebuggerPayload {
-  actions: Array<{
-    type: string
-    target?: string
-    timestamp: string
-    offset: number | null
-    metadata?: Record<string, unknown>
-  }>
-  logs: Array<{
-    level: "log" | "info" | "warn" | "error" | "debug"
-    message: string
-    timestamp: string
-    offset: number | null
-    metadata?: Record<string, unknown>
-  }>
-  networkRequests: Array<{
-    method: string
-    url: string
-    status?: number
-    duration?: number
-    requestHeaders?: Record<string, string>
-    responseHeaders?: Record<string, string>
-    requestBody?: string
-    responseBody?: string
-    timestamp: string
-    offset: number | null
-  }>
+  actions: Array<
+    DebuggerEventTabContext & {
+      type: string
+      target?: string
+      timestamp: string
+      offset: number | null
+      metadata?: Record<string, unknown>
+    }
+  >
+  logs: Array<
+    DebuggerEventTabContext & {
+      level: "log" | "info" | "warn" | "error" | "debug"
+      message: string
+      timestamp: string
+      offset: number | null
+      metadata?: Record<string, unknown>
+    }
+  >
+  networkRequests: Array<
+    DebuggerEventTabContext & {
+      method: string
+      url: string
+      status?: number
+      duration?: number
+      requestHeaders?: Record<string, string>
+      responseHeaders?: Record<string, string>
+      requestBody?: string
+      responseBody?: string
+      failure?: string
+      timestamp: string
+      offset: number | null
+    }
+  >
 }
 
 export interface DebuggerStartSessionResponse {
@@ -116,6 +144,7 @@ export interface DebuggerStartSessionMessage {
     captureTabId: number
     captureType: DebuggerCaptureType
     instantReplayLookbackMs?: number
+    followTabs?: boolean
   }
 }
 
@@ -124,6 +153,14 @@ export interface DebuggerMarkRecordingStartedMessage {
   payload: {
     sessionId: string
     recordingStartedAt: number
+  }
+}
+
+export interface DebuggerMarkRecordingStoppedMessage {
+  type: typeof MARK_RECORDING_STOPPED_MESSAGE
+  payload: {
+    sessionId: string
+    recordingStoppedAt: number
   }
 }
 
@@ -160,14 +197,25 @@ export interface DebuggerEnsurePageRuntimeMessage {
   payload?: Record<string, never>
 }
 
+export interface DebuggerGetCaptureStateMessage {
+  type: typeof GET_CAPTURE_STATE_MESSAGE
+  payload?: Record<string, never>
+}
+
+export interface DebuggerCaptureState {
+  networkBodies: boolean
+}
+
 export type DebuggerRuntimeMessage =
   | DebuggerStartSessionMessage
   | DebuggerMarkRecordingStartedMessage
+  | DebuggerMarkRecordingStoppedMessage
   | DebuggerGetSessionSnapshotMessage
   | DebuggerDiscardSessionMessage
   | DebuggerPageEventMessage
   | DebuggerPageEventsMessage
   | DebuggerEnsurePageRuntimeMessage
+  | DebuggerGetCaptureStateMessage
 
 export interface DebuggerContentBridgePayload {
   source: typeof PAGE_BRIDGE_SOURCE
@@ -181,5 +229,18 @@ export interface StoredDebuggerSession {
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  recordingStoppedAt: number | null
+  // Record Full Screen follows the user into other tabs; Record This Tab
+  // only ever covers the capture tab.
+  followTabs: boolean
+  // The extension page that records this session. Closing it discards the
+  // session, since nothing can submit it anymore.
+  recorderTabId: number | null
+  // The tab the user is on, and the tab the last tab-switch event pointed at.
+  // They differ while a just-opened tab has no URL yet. Stored so a worker
+  // restart does not lose them.
+  activeTabId: number | null
+  lastSwitchTabId: number | null
+  tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }

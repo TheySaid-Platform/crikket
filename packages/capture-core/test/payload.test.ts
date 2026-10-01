@@ -14,6 +14,7 @@ describe("debugger payload regression", () => {
       captureType: "video",
       startedAt: 1000,
       recordingStartedAt: 1500,
+      tabs: [{ tabId: 12, joinedAt: 1000 }],
       events: [
         {
           kind: "network",
@@ -83,6 +84,75 @@ describe("debugger payload regression", () => {
         },
       ],
     })
+  })
+
+  it("carries the source tab of each event into the payload", () => {
+    const payload = buildDebuggerSubmissionPayload({
+      sessionId: "session_2",
+      captureTabId: 1,
+      captureType: "video",
+      startedAt: 1000,
+      recordingStartedAt: 1000,
+      tabs: [
+        { tabId: 1, joinedAt: 1000 },
+        { tabId: 2, joinedAt: 1100 },
+      ],
+      events: [
+        {
+          kind: "network",
+          timestamp: 1200,
+          method: "GET",
+          url: "https://accounts.example.com/token",
+          status: 200,
+          tabId: 2,
+          pageUrl: "https://accounts.example.com/login",
+        },
+        {
+          kind: "console",
+          timestamp: 1300,
+          level: "log",
+          message: "back in app",
+          tabId: 1,
+          pageUrl: "https://example.com/app",
+        },
+      ],
+    })
+
+    expect(payload.networkRequests[0]).toMatchObject({
+      tabId: 2,
+      pageUrl: "https://accounts.example.com/login",
+    })
+    expect(payload.logs[0]).toMatchObject({
+      tabId: 1,
+      pageUrl: "https://example.com/app",
+    })
+  })
+
+  it("leaves out what happened after the recording stopped", () => {
+    const payload = buildDebuggerSubmissionPayload({
+      sessionId: "session_3",
+      captureTabId: 1,
+      captureType: "video",
+      startedAt: 1000,
+      recordingStartedAt: 1000,
+      recordingStoppedAt: 5000,
+      tabs: [{ tabId: 1, joinedAt: 1000 }],
+      events: [
+        { kind: "console", timestamp: 4000, level: "log", message: "during" },
+        { kind: "console", timestamp: 5000, level: "log", message: "at stop" },
+        {
+          kind: "console",
+          timestamp: 6000,
+          level: "log",
+          message: "filling in the form",
+        },
+      ],
+    })
+
+    expect(payload.logs.map((log) => log.message)).toEqual([
+      "during",
+      "at stop",
+    ])
   })
 
   it("detects whether a payload contains any debugger data", () => {

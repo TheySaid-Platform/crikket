@@ -1,5 +1,5 @@
 import { Button } from "@crikket/ui/components/ui/button"
-import { Camera, Video } from "lucide-react"
+import { Camera, Monitor, Video } from "lucide-react"
 import { ShortcutKbd } from "@/components/shortcut-kbd"
 import type { PopupCaptureType } from "@/hooks/use-popup-capture"
 import { formatDuration } from "@/lib/utils"
@@ -79,11 +79,22 @@ export function PopupCaptureActions({
             variant="default"
           >
             <Video className="h-5 w-5" />
-            <span>Record Screen</span>
+            <span>Record This Tab</span>
             <ShortcutKbd
               className="bg-primary-foreground/15 text-primary-foreground"
               shortcut={startRecordingShortcut}
             />
+          </Button>
+
+          <Button
+            className="w-full justify-start gap-3"
+            disabled={isBusy}
+            onClick={() => onRequestCapture("display")}
+            size="lg"
+            variant="outline"
+          >
+            <Monitor className="h-5 w-5" />
+            <span>Record Full Screen</span>
           </Button>
 
           <Button
@@ -106,8 +117,7 @@ export function PopupCaptureActions({
       {pendingCaptureType ? (
         <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
           <p className="text-sm">
-            Allow Crikket to capture your current tab for{" "}
-            {pendingCaptureType === "video" ? "recording" : "screenshot"}?
+            {getPendingCaptureMessage(pendingCaptureType)}
           </p>
           <div className="flex gap-2">
             <Button
@@ -132,4 +142,14 @@ export function PopupCaptureActions({
       ) : null}
     </>
   )
+}
+
+function getPendingCaptureMessage(captureType: PopupCaptureType): string {
+  if (captureType === "display") {
+    return "Next, Chrome asks you to share your screen. Move through as many tabs as you need; Crikket keeps console logs and network requests from each one."
+  }
+
+  return `Allow Crikket to capture your current tab for ${
+    captureType === "video" ? "recording" : "screenshot"
+  }?`
 }

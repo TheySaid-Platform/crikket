@@ -3,6 +3,7 @@ import { MousePointerClick } from "lucide-react"
 import { useEffect, useMemo, useRef } from "react"
 
 import { buildReproductionSteps } from "./reproduction-steps"
+import { TabBadge } from "./tab-badge"
 import type { DebuggerAction, DebuggerTimelineEntry } from "./types"
 
 interface ReproductionStepsListProps {
@@ -110,11 +111,16 @@ export function ReproductionStepsList({
                     <p className="text-foreground text-sm leading-5">
                       {step.title}
                     </p>
-                    {step.timeLabel ? (
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                        {step.timeLabel}
-                      </span>
-                    ) : null}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {step.selectedEntry.tabLabel ? (
+                        <TabBadge label={step.selectedEntry.tabLabel} />
+                      ) : null}
+                      {step.timeLabel ? (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {step.timeLabel}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   {step.summary ? (
                     <p className="text-muted-foreground text-xs leading-4">
