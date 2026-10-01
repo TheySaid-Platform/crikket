@@ -7,8 +7,9 @@ import type {
 
 // Response bodies read in the page arrive separately from the webRequest
 // event for the same request. This pairs them up: each body goes to the
-// oldest matching request that has no body yet, so parallel identical calls
-// are filled in order.
+// matching request (same tab, method, URL and status, no body yet) that
+// finished closest to when the page read the body, so parallel identical
+// calls get their own bodies even when they finish out of order.
 
 export interface NetworkBody {
   tabId: number
@@ -59,17 +60,20 @@ export function createNetworkBodyMatcher() {
     session: StoredDebuggerSession,
     body: NetworkBody
   ): boolean => {
-    const request = session.events.find(
-      (event): event is Extract<DebuggerEvent, { kind: "network" }> =>
-        event.kind === "network" &&
-        event.responseBody === undefined &&
-        event.tabId === body.tabId &&
-        event.method === body.method &&
-        event.status === body.status &&
-        withoutHash(event.url) === withoutHash(body.url) &&
-        event.timestamp <= body.timestamp + 1000 &&
-        body.timestamp - event.timestamp <= MATCH_WINDOW_MS
-    )
+    let request: NetworkEvent | null = null
+    let closestGap = Number.POSITIVE_INFINITY
+    for (const event of session.events) {
+      if (!isCandidate(event, body)) {
+        continue
+      }
+
+      const finishedAt = event.timestamp + (event.duration ?? 0)
+      const gap = Math.abs(body.timestamp - finishedAt)
+      if (gap < closestGap) {
+        closestGap = gap
+        request = event
+      }
+    }
     if (!request) {
       return false
     }
@@ -120,6 +124,24 @@ export function createNetworkBodyMatcher() {
       pendingBySession.delete(sessionId)
     },
   }
+}
+
+type NetworkEvent = Extract<DebuggerEvent, { kind: "network" }>
+
+function isCandidate(
+  event: DebuggerEvent,
+  body: NetworkBody
+): event is NetworkEvent {
+  return (
+    event.kind === "network" &&
+    event.responseBody === undefined &&
+    event.tabId === body.tabId &&
+    event.method === body.method &&
+    event.status === body.status &&
+    withoutHash(event.url) === withoutHash(body.url) &&
+    event.timestamp <= body.timestamp + 1000 &&
+    body.timestamp - event.timestamp <= MATCH_WINDOW_MS
+  )
 }
 
 function withoutHash(url: string): string {

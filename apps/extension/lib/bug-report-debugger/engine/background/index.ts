@@ -5,6 +5,7 @@ import {
   GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
+  MARK_RECORDING_STOPPED_MESSAGE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
   START_SESSION_MESSAGE,
@@ -66,7 +67,11 @@ export function registerDebuggerBackgroundListeners(): void {
           return
         }
 
-        await store.appendPageEvents(tabId, events, sender.tab?.url)
+        await store.appendPageEvents(tabId, events, {
+          // The top frame's own URL; iframes fall back to the tab's.
+          pageUrl: sender.frameId === 0 ? sender.url : undefined,
+          tabUrl: sender.tab?.url,
+        })
       }
 
       switch (message.type) {
@@ -77,6 +82,11 @@ export function registerDebuggerBackgroundListeners(): void {
         }
         case MARK_RECORDING_STARTED_MESSAGE: {
           await store.markSessionRecordingStarted(message.payload)
+          safeSendResponse({ ok: true, data: undefined })
+          return
+        }
+        case MARK_RECORDING_STOPPED_MESSAGE: {
+          await store.markSessionRecordingStopped(message.payload)
           safeSendResponse({ ok: true, data: undefined })
           return
         }
@@ -142,7 +152,8 @@ export function registerDebuggerBackgroundListeners(): void {
         )
     }
 
-    if (!didTabNavigate) {
+    // Also after load, so iframes that exist by then get the scripts too.
+    if (!(didTabNavigate || changeInfo.status === "complete")) {
       return
     }
 

@@ -146,6 +146,9 @@ async function initializeDebuggerSession(
     captureTabId,
     captureType: captureType === "screenshot" ? "screenshot" : "video",
     instantReplayLookbackMs: captureType === "screenshot" ? 10_000 : undefined,
+    // Only Record Full Screen follows the user; Record This Tab keeps to the
+    // tab it records.
+    followTabs: captureType === "display",
   })
 
   return session.sessionId

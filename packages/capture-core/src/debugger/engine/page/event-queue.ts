@@ -1,4 +1,9 @@
-import { FLUSH_INTERVAL_MS, MAX_BATCH_SIZE, PAGE_SOURCE } from "./constants"
+import {
+  FLUSH_INTERVAL_MS,
+  MAX_BATCH_SIZE,
+  PAGE_EVENTS_EVENT,
+  PAGE_SOURCE,
+} from "./constants"
 import type { EventQueue } from "./types"
 
 interface EventQueueDiagnostics {
@@ -20,20 +25,25 @@ export function createEventQueue(
       return
     }
 
-    const batchedEvents = eventQueue.splice(0, MAX_BATCH_SIZE)
-    recordFlushedBatch?.()
+    // Everything goes out now, in batches, because this also runs while the
+    // page unloads and a later timer would never fire.
+    while (eventQueue.length > 0) {
+      const batchedEvents = eventQueue.splice(0, MAX_BATCH_SIZE)
+      recordFlushedBatch?.()
 
-    window.postMessage(
-      {
-        source: PAGE_SOURCE,
-        events: batchedEvents,
-      },
-      "*"
-    )
-
-    if (eventQueue.length > 0) {
-      flushTimer = setTimeout(flushEventQueue, 0)
-      return
+      try {
+        // A string detail is readable from the extension's isolated world.
+        window.dispatchEvent(
+          new CustomEvent(PAGE_EVENTS_EVENT, {
+            detail: JSON.stringify({
+              source: PAGE_SOURCE,
+              events: batchedEvents,
+            }),
+          })
+        )
+      } catch {
+        // An event that cannot be serialized is dropped, not the page.
+      }
     }
   }
 

@@ -85,10 +85,10 @@ function App() {
 
         <div className="rounded-md border bg-muted p-3">
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Record This Tab films only your current tab. Record Full Screen
-            films your whole screen as you move between tabs. Both keep console
-            logs and network requests from every tab you use. A new tab will
-            open for you to review and submit your report.
+            Record This Tab records only your current tab: its video, console
+            and network. Record Full Screen records your whole screen, plus the
+            console and network of every tab you use. A new tab will open for
+            you to review and submit your report.
           </p>
         </div>
 

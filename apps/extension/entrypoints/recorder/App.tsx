@@ -23,7 +23,7 @@ import {
   CardTitle,
 } from "@crikket/ui/components/ui/card"
 import { AlertCircle } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChooseDisplayStep } from "@/components/choose-display-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
@@ -38,6 +38,7 @@ import {
   discardDebuggerSession,
   getDebuggerSessionSnapshot,
   markDebuggerRecordingStarted,
+  markDebuggerRecordingStopped,
 } from "@/lib/bug-report-debugger/client"
 import { submitBugReportWithUploads } from "@/lib/bug-report-upload"
 import {
@@ -190,8 +191,30 @@ function App() {
     } satisfies DebuggerSubmissionInput
   }, [debuggerSessionId])
 
+  // When the video ended. Sent once, before the report is built, so the
+  // background stops following tabs and drops later events.
+  const recordingStoppedAtRef = useRef<number | null>(null)
+  const markStoppedPromiseRef = useRef<Promise<void> | null>(null)
+  const markRecordingStopped = useCallback((): Promise<void> => {
+    if (captureType !== "video" || !debuggerSessionId) {
+      return Promise.resolve()
+    }
+
+    markStoppedPromiseRef.current ??= markDebuggerRecordingStopped({
+      sessionId: debuggerSessionId,
+      recordingStoppedAt: recordingStoppedAtRef.current ?? Date.now(),
+    }).catch((error: unknown) => {
+      reportNonFatalError(
+        `Failed to mark debugger recording stop for session ${debuggerSessionId}`,
+        error
+      )
+    })
+    return markStoppedPromiseRef.current
+  }, [captureType, debuggerSessionId])
+
   const handleStopRecording = useCallback(async () => {
     const stoppedAt = Date.now()
+    recordingStoppedAtRef.current ??= stoppedAt
     await stopCapture()
     if (startTime) {
       setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
@@ -243,6 +266,8 @@ function App() {
 
   useEffect(() => {
     if (state === "recording" && recordedBlob) {
+      // Chrome's "Stop sharing" ended the video.
+      recordingStoppedAtRef.current ??= Date.now()
       if (startTime) {
         setRecordedDurationMs(Math.max(0, Date.now() - startTime))
       }
@@ -258,7 +283,8 @@ function App() {
 
     let isCancelled = false
 
-    getDebuggerSubmissionInput()
+    markRecordingStopped()
+      .then(() => getDebuggerSubmissionInput())
       .then((debuggerInput) => {
         if (isCancelled) {
           return
@@ -286,7 +312,7 @@ function App() {
     return () => {
       isCancelled = true
     }
-  }, [getDebuggerSubmissionInput, state])
+  }, [getDebuggerSubmissionInput, markRecordingStopped, state])
 
   useRecorderInit({
     onCaptureTypeChange: setCaptureType,
@@ -339,6 +365,7 @@ function App() {
               recordedDurationMs ?? (startTime ? Date.now() - startTime : 0)
             )
           : 0
+      await markRecordingStopped()
       const debuggerSubmission = await getDebuggerSubmissionInput()
       const captureContextSubmissionData = buildCaptureContextSubmissionData(
         getReportPageContext(captureContext, debuggerSubmission.firstPage)

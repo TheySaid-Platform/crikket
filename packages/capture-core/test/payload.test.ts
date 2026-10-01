@@ -128,6 +128,33 @@ describe("debugger payload regression", () => {
     })
   })
 
+  it("leaves out what happened after the recording stopped", () => {
+    const payload = buildDebuggerSubmissionPayload({
+      sessionId: "session_3",
+      captureTabId: 1,
+      captureType: "video",
+      startedAt: 1000,
+      recordingStartedAt: 1000,
+      recordingStoppedAt: 5000,
+      tabs: [{ tabId: 1, joinedAt: 1000 }],
+      events: [
+        { kind: "console", timestamp: 4000, level: "log", message: "during" },
+        { kind: "console", timestamp: 5000, level: "log", message: "at stop" },
+        {
+          kind: "console",
+          timestamp: 6000,
+          level: "log",
+          message: "filling in the form",
+        },
+      ],
+    })
+
+    expect(payload.logs.map((log) => log.message)).toEqual([
+      "during",
+      "at stop",
+    ])
+  })
+
   it("detects whether a payload contains any debugger data", () => {
     expect(
       hasDebuggerPayloadData({

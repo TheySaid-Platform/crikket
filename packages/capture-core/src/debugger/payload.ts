@@ -14,7 +14,11 @@ export function buildDebuggerSubmissionPayload(
   snapshot: DebuggerSessionSnapshot
 ): BugReportDebuggerPayload {
   const anchorTimestamp = snapshot.recordingStartedAt ?? snapshot.startedAt
-  const events = [...snapshot.events].sort((a, b) => a.timestamp - b.timestamp)
+  const stoppedAt = snapshot.recordingStoppedAt ?? null
+  // What happens while the user fills in the form is not part of the bug.
+  const events = snapshot.events
+    .filter((event) => stoppedAt === null || event.timestamp <= stoppedAt)
+    .sort((a, b) => a.timestamp - b.timestamp)
 
   const payload: BugReportDebuggerPayload = {
     actions: [],

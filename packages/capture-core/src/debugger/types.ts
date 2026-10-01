@@ -4,6 +4,7 @@ import type {
   GET_CAPTURE_STATE_MESSAGE,
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
+  MARK_RECORDING_STOPPED_MESSAGE,
   PAGE_BRIDGE_SOURCE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
@@ -76,6 +77,8 @@ export interface DebuggerSessionSnapshot {
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  // Events after this are not part of the report.
+  recordingStoppedAt?: number | null
   tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }
@@ -141,6 +144,7 @@ export interface DebuggerStartSessionMessage {
     captureTabId: number
     captureType: DebuggerCaptureType
     instantReplayLookbackMs?: number
+    followTabs?: boolean
   }
 }
 
@@ -149,6 +153,14 @@ export interface DebuggerMarkRecordingStartedMessage {
   payload: {
     sessionId: string
     recordingStartedAt: number
+  }
+}
+
+export interface DebuggerMarkRecordingStoppedMessage {
+  type: typeof MARK_RECORDING_STOPPED_MESSAGE
+  payload: {
+    sessionId: string
+    recordingStoppedAt: number
   }
 }
 
@@ -197,6 +209,7 @@ export interface DebuggerCaptureState {
 export type DebuggerRuntimeMessage =
   | DebuggerStartSessionMessage
   | DebuggerMarkRecordingStartedMessage
+  | DebuggerMarkRecordingStoppedMessage
   | DebuggerGetSessionSnapshotMessage
   | DebuggerDiscardSessionMessage
   | DebuggerPageEventMessage
@@ -216,9 +229,18 @@ export interface StoredDebuggerSession {
   captureType: DebuggerCaptureType
   startedAt: number
   recordingStartedAt: number | null
+  recordingStoppedAt: number | null
+  // Record Full Screen follows the user into other tabs; Record This Tab
+  // only ever covers the capture tab.
+  followTabs: boolean
   // The extension page that records this session. Closing it discards the
   // session, since nothing can submit it anymore.
   recorderTabId: number | null
+  // The tab the user is on, and the tab the last tab-switch event pointed at.
+  // They differ while a just-opened tab has no URL yet. Stored so a worker
+  // restart does not lose them.
+  activeTabId: number | null
+  lastSwitchTabId: number | null
   tabs: DebuggerSessionTab[]
   events: DebuggerEvent[]
 }

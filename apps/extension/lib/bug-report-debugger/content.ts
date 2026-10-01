@@ -1,6 +1,7 @@
 import {
   CAPTURE_STATE_MESSAGE,
   PAGE_CONTROL_SOURCE,
+  PAGE_EVENTS_EVENT,
 } from "@crikket/capture-core/debugger/constants"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import {
@@ -27,6 +28,8 @@ export function setupDebuggerContentBridge(): void {
 
   const queue: unknown[] = []
   let flushTimer: ReturnType<typeof setTimeout> | null = null
+  // While the page unloads, timers no longer fire, so events go out at once.
+  let isUnloading = false
 
   const BATCH_SIZE = 40
   const FLUSH_INTERVAL_MS = 120
@@ -57,6 +60,16 @@ export function setupDebuggerContentBridge(): void {
     flushTimer = setTimeout(flushQueue, FLUSH_INTERVAL_MS)
   }
 
+  const flushAll = () => {
+    while (queue.length > 0) {
+      flushQueue()
+    }
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+  }
+
   const enqueueEvents = (events: unknown[]) => {
     if (events.length === 0) {
       return
@@ -64,6 +77,11 @@ export function setupDebuggerContentBridge(): void {
 
     for (const candidate of events) {
       queue.push(candidate)
+    }
+
+    if (isUnloading) {
+      flushAll()
+      return
     }
 
     if (queue.length >= BATCH_SIZE) {
@@ -77,21 +95,38 @@ export function setupDebuggerContentBridge(): void {
     scheduleFlush()
   }
 
-  const onWindowMessage = (event: MessageEvent<unknown>) => {
-    if (event.source !== window) return
-    if (!isDebuggerContentBridgePayload(event.data)) return
+  const onPageEvents = (event: Event) => {
+    const detail = (event as CustomEvent<unknown>).detail
+    if (typeof detail !== "string") return
 
-    if (Array.isArray(event.data.events)) {
-      enqueueEvents(event.data.events)
+    let payload: unknown
+    try {
+      payload = JSON.parse(detail)
+    } catch {
+      return
+    }
+    if (!isDebuggerContentBridgePayload(payload)) return
+
+    if (Array.isArray(payload.events)) {
+      enqueueEvents(payload.events)
       return
     }
 
-    enqueueEvents([event.data.event])
+    enqueueEvents([payload.event])
   }
 
-  window.addEventListener("message", onWindowMessage)
-  window.addEventListener("pagehide", flushQueue, {
-    capture: true,
+  window.addEventListener(PAGE_EVENTS_EVENT, onPageEvents)
+  window.addEventListener(
+    "pagehide",
+    () => {
+      isUnloading = true
+      flushAll()
+    },
+    { capture: true }
+  )
+  // Back from the back/forward cache: normal batching again.
+  window.addEventListener("pageshow", () => {
+    isUnloading = false
   })
 
   // Response bodies are only read while this tab is recording. Ask once on

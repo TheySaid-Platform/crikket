@@ -94,7 +94,12 @@ describe("debugger normalization regression", () => {
       captureType: "video",
       startedAt: 1000,
       recordingStartedAt: 1500,
+      recordingStoppedAt: null,
+      // Older stored sessions never follow tabs.
+      followTabs: false,
       recorderTabId: null,
+      activeTabId: null,
+      lastSwitchTabId: null,
       // Sessions stored before multi-tab capture fall back to the capture tab.
       tabs: [{ tabId: 42, joinedAt: 1000 }],
       events: [
@@ -171,6 +176,7 @@ describe("debugger normalization regression", () => {
     })
 
     expect(session?.recorderTabId).toBe(9)
+    expect(session?.followTabs).toBe(false)
     expect(session?.tabs).toEqual([
       { tabId: 1, url: "https://example.com", title: "App", joinedAt: 1000 },
       {

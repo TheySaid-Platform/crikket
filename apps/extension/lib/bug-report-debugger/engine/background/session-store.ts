@@ -65,11 +65,24 @@ interface StartSessionPayload {
   captureTabId: number
   captureType: "video" | "screenshot"
   instantReplayLookbackMs?: number
+  followTabs?: boolean
 }
 
 interface MarkRecordingStartedPayload {
   sessionId: string
   recordingStartedAt: number
+}
+
+interface MarkRecordingStoppedPayload {
+  sessionId: string
+  recordingStoppedAt: number
+}
+
+// Where a batch of page events came from: the sending page's own URL (top
+// frame), and the tab's current URL.
+interface PageEventSource {
+  pageUrl?: string
+  tabUrl?: string
 }
 
 interface DebuggerSessionStore {
@@ -81,13 +94,16 @@ interface DebuggerSessionStore {
   appendPageEvents: (
     tabId: number,
     rawEvents: unknown[],
-    pageUrl?: string
+    source?: PageEventSource
   ) => Promise<void>
   getSessionSnapshot: (
     sessionId: string
   ) => Promise<DebuggerSessionSnapshot | null>
   markSessionRecordingStarted: (
     payload: MarkRecordingStartedPayload
+  ) => Promise<void>
+  markSessionRecordingStopped: (
+    payload: MarkRecordingStoppedPayload
   ) => Promise<void>
   discardSession: (sessionId: string) => Promise<void>
   ensureDebuggerScriptForTab: (tabId: number, url?: string) => Promise<void>
@@ -103,10 +119,6 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
   const tabToSession = new Map<number, string>()
   const recentEventsByTab = new Map<number, DebuggerEvent[]>()
   const tabUrls = new Map<number, string>()
-  // The tab the user is on, and the tab the last tab-switch event pointed at.
-  // They differ while a just-opened tab has no URL yet.
-  const activeTabBySession = new Map<string, number>()
-  const lastSwitchTabBySession = new Map<string, number>()
   const networkBodies = createNetworkBodyMatcher()
 
   let isLoaded = false
@@ -134,27 +146,64 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     })
   }
 
-  // Fills tabUrls (lost when the worker restarts) and returns the open tab ids.
-  const loadOpenTabs = async (): Promise<Set<number>> => {
+  // Fills tabUrls (lost when the worker restarts) and returns the open tabs'
+  // URLs by id, or null if they could not be listed.
+  const loadOpenTabs = async (): Promise<Map<number, string> | null> => {
     const openTabs = await chrome.tabs.query({}).catch((error: unknown) => {
       reportNonFatalError("Failed to list tabs while loading state", error)
-      return [] as chrome.tabs.Tab[]
+      return null
     })
+    if (!openTabs) {
+      return null
+    }
 
-    const openTabIds = new Set<number>()
+    const urlsByTabId = new Map<number, string>()
     for (const tab of openTabs) {
       if (typeof tab.id !== "number") continue
-      openTabIds.add(tab.id)
+      urlsByTabId.set(tab.id, tab.url ?? "")
       if (tab.url && isInjectablePageUrl(tab.url)) {
         tabUrls.set(tab.id, tab.url)
       }
     }
 
-    return openTabIds
+    return urlsByTabId
+  }
+
+  // After a browser restart, stored sessions point at tab ids Chrome may have
+  // given to unrelated tabs. Keep a session only if its own recorder page is
+  // still open, or it is young enough that the recorder is still opening.
+  const isRecorderStillOpen = (
+    session: StoredDebuggerSession,
+    urlsByTabId: Map<number, string>
+  ): boolean => {
+    if (session.recorderTabId === null) {
+      return Date.now() - session.startedAt <= UNATTACHED_SESSION_JOIN_WINDOW_MS
+    }
+
+    const url = urlsByTabId.get(session.recorderTabId)
+    if (!url?.startsWith(chrome.runtime.getURL(RECORDER_PAGE_PATH))) {
+      return false
+    }
+
+    return (
+      readDebuggerSessionIdFromSearch(new URL(url).search) === session.sessionId
+    )
+  }
+
+  const restoreSession = (
+    session: StoredDebuggerSession,
+    urlsByTabId: Map<number, string> | null
+  ) => {
+    sessionsById.set(session.sessionId, session)
+    for (const tab of session.tabs) {
+      if (!urlsByTabId || urlsByTabId.has(tab.tabId)) {
+        tabToSession.set(tab.tabId, session.sessionId)
+      }
+    }
   }
 
   const hydrateStoredState = async () => {
-    const [result, openTabIds] = await Promise.all([
+    const [result, urlsByTabId] = await Promise.all([
       chrome.storage.local.get([DEBUGGER_SESSIONS_STORAGE_KEY]),
       loadOpenTabs(),
     ])
@@ -165,18 +214,23 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
+    let droppedStaleSession = false
     for (const candidate of storedSessions) {
       const session = normalizeStoredSession(candidate)
       if (!session) {
         continue
       }
 
-      sessionsById.set(session.sessionId, session)
-      for (const tab of session.tabs) {
-        if (openTabIds.size === 0 || openTabIds.has(tab.tabId)) {
-          tabToSession.set(tab.tabId, session.sessionId)
-        }
+      if (urlsByTabId && !isRecorderStillOpen(session, urlsByTabId)) {
+        droppedStaleSession = true
+        continue
       }
+
+      restoreSession(session, urlsByTabId)
+    }
+
+    if (droppedStaleSession) {
+      schedulePersist()
     }
   }
 
@@ -217,8 +271,6 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    activeTabBySession.delete(sessionId)
-    lastSwitchTabBySession.delete(sessionId)
     networkBodies.forget(sessionId)
     for (const [tabId, mappedSessionId] of tabToSession) {
       if (mappedSessionId === sessionId) {
@@ -292,7 +344,13 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     })
   }
 
-  // The newest video session that can still take in more tabs.
+  const isRecording = (session: StoredDebuggerSession): boolean =>
+    session.captureType === "video" &&
+    session.recordingStartedAt !== null &&
+    session.recordingStoppedAt === null
+
+  // The newest session that follows the user into other tabs, while it is
+  // recording. Record This Tab sessions never take in other tabs.
   const getJoinableSession = (): StoredDebuggerSession | null => {
     let newest: StoredDebuggerSession | null = null
 
@@ -303,15 +361,15 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       }
     }
 
-    if (!newest) {
+    if (
+      !newest?.followTabs ||
+      newest.recorderTabId === null ||
+      !isRecording(newest)
+    ) {
       return null
     }
 
-    const isAttached = newest.recorderTabId !== null
-    const isStarting =
-      Date.now() - newest.startedAt <= UNATTACHED_SESSION_JOIN_WINDOW_MS
-
-    return isAttached || isStarting ? newest : null
+    return newest
   }
 
   const updateSessionTabInfo = (
@@ -350,7 +408,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
 
     tabToSession.set(tabId, session.sessionId)
-    sendCaptureState(tabId, true)
+    sendCaptureState(tabId, isRecording(session))
     if (!session.tabs.some((entry) => entry.tabId === tabId)) {
       session.tabs.push({ tabId, ...describeTab(tab), joinedAt: Date.now() })
     }
@@ -375,10 +433,10 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    if (lastSwitchTabBySession.get(session.sessionId) === tabId) {
+    if (session.lastSwitchTabId === tabId) {
       return
     }
-    lastSwitchTabBySession.set(session.sessionId, tabId)
+    session.lastSwitchTabId = tabId
 
     const { url, title } = describeTab(tab)
     appendEventsToSession(session, [
@@ -459,7 +517,12 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       startedAt,
       recordingStartedAt:
         payload.captureType === "screenshot" ? startedAt : null,
+      recordingStoppedAt: null,
+      followTabs:
+        payload.captureType === "video" && payload.followTabs === true,
       recorderTabId: null,
+      activeTabId: payload.captureTabId,
+      lastSwitchTabId: payload.captureTabId,
       tabs: [
         { tabId: payload.captureTabId, ...captureTabInfo, joinedAt: startedAt },
       ],
@@ -468,13 +531,8 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     sessionsById.set(sessionId, session)
     tabToSession.set(payload.captureTabId, sessionId)
-    activeTabBySession.set(sessionId, payload.captureTabId)
-    lastSwitchTabBySession.set(sessionId, payload.captureTabId)
     schedulePersist()
     await injectDebuggerScriptIntoTab(payload.captureTabId)
-    if (payload.captureType === "video") {
-      sendCaptureState(payload.captureTabId, true)
-    }
 
     return {
       sessionId,
@@ -494,9 +552,10 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
   const normalizePageEvents = (
     tabId: number,
-    rawEvents: unknown[]
+    rawEvents: unknown[],
+    pageUrl: string | undefined
   ): DebuggerEvent[] => {
-    const resolvedPageUrl = toPageUrl(tabUrls.get(tabId))
+    const resolvedPageUrl = toPageUrl(pageUrl)
     const normalizedEvents: DebuggerEvent[] = []
 
     for (const rawEvent of rawEvents) {
@@ -538,7 +597,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
   const appendPageEvents = async (
     tabId: number,
     rawEvents: unknown[],
-    pageUrl?: string
+    source: PageEventSource = {}
   ) => {
     await ensureLoaded()
 
@@ -546,14 +605,24 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    if (pageUrl && isInjectablePageUrl(pageUrl)) {
-      tabUrls.set(tabId, pageUrl)
+    if (source.tabUrl && isInjectablePageUrl(source.tabUrl)) {
+      tabUrls.set(tabId, source.tabUrl)
     }
+    // Events flushed as a page unloads arrive after the tab moved on, so the
+    // sending page's own URL wins over the tab's.
+    const pageUrl =
+      source.pageUrl && isInjectablePageUrl(source.pageUrl)
+        ? source.pageUrl
+        : tabUrls.get(tabId)
     const sessionId = tabToSession.get(tabId)
     const session = sessionId ? sessionsById.get(sessionId) : undefined
 
     const eventsToNormalize = takeNetworkBodies(tabId, rawEvents, session)
-    const normalizedEvents = normalizePageEvents(tabId, eventsToNormalize)
+    const normalizedEvents = normalizePageEvents(
+      tabId,
+      eventsToNormalize,
+      pageUrl
+    )
     appendEventsToRecentBuffer(tabId, normalizedEvents)
 
     if (session && normalizedEvents.length > 0) {
@@ -568,7 +637,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     await ensureLoaded()
 
     const session = sessionsById.get(tabToSession.get(tabId) ?? "")
-    return { networkBodies: session?.captureType === "video" }
+    return { networkBodies: session ? isRecording(session) : false }
   }
 
   const getSessionSnapshot = async (
@@ -587,6 +656,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       captureType: session.captureType,
       startedAt: session.startedAt,
       recordingStartedAt: session.recordingStartedAt,
+      recordingStoppedAt: session.recordingStoppedAt,
       tabs: session.tabs,
       events: session.events,
     }
@@ -604,6 +674,32 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     session.recordingStartedAt = Math.floor(payload.recordingStartedAt)
     schedulePersist()
+    setCaptureStateForSession(session.sessionId, isRecording(session))
+  }
+
+  // After Stop, nothing joins the session and every tab drops its fetch/XHR
+  // hooks; events after this time are left out of the report.
+  const markSessionRecordingStopped = async (
+    payload: MarkRecordingStoppedPayload
+  ) => {
+    await ensureLoaded()
+
+    const session = sessionsById.get(payload.sessionId)
+    if (!session || session.recordingStoppedAt !== null) {
+      return
+    }
+
+    session.recordingStoppedAt = Math.floor(payload.recordingStoppedAt)
+    schedulePersist()
+    setCaptureStateForSession(session.sessionId, false)
+  }
+
+  const setCaptureStateForSession = (sessionId: string, enabled: boolean) => {
+    for (const [tabId, mappedSessionId] of tabToSession) {
+      if (mappedSessionId === sessionId) {
+        sendCaptureState(tabId, enabled)
+      }
+    }
   }
 
   const discardSession = async (sessionId: string) => {
@@ -651,7 +747,8 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    activeTabBySession.set(session.sessionId, tab.id)
+    session.activeTabId = tab.id
+    schedulePersist()
     // A tab opened from a link is active before it has a URL; handleTabUpdated
     // records the switch once it does.
     if (!isTrackableTab(tab)) {
@@ -703,11 +800,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     // The tab the user is on only now became a web page: a link opened in a
     // new tab, or a new tab where they typed a URL.
     const session = getJoinableSession()
-    if (
-      !session ||
-      activeTabBySession.get(session.sessionId) !== tab.id ||
-      !isTrackableTab(tab)
-    ) {
+    if (!session || session.activeTabId !== tab.id || !isTrackableTab(tab)) {
       return
     }
 
@@ -750,6 +843,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     appendPageEvents,
     getSessionSnapshot,
     markSessionRecordingStarted,
+    markSessionRecordingStopped,
     discardSession,
     ensureDebuggerScriptForTab,
     handleTabActivated,
