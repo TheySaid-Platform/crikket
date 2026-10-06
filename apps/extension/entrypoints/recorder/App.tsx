@@ -1,6 +1,7 @@
 import {
   buildDebuggerSubmissionPayload,
   hasDebuggerPayloadData,
+  isDuringPause,
 } from "@crikket/capture-core/debugger/payload"
 import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
 import {
@@ -11,6 +12,7 @@ import {
 import type {
   BugReportDebuggerPayload,
   DebuggerSessionTab,
+  RecordingPause,
 } from "@crikket/capture-core/debugger/types"
 import { env } from "@crikket/env/extension"
 import type { Priority } from "@crikket/shared/constants/priorities"
@@ -74,7 +76,11 @@ function App() {
   const shortcuts = useCommandShortcuts()
   const [state, setState] = useState<State>("idle")
   const [captureType, setCaptureType] = useState<CaptureType>("video")
+  // Moved forward by the paused time on each resume, so now - startTime is
+  // the length of the video so far.
   const [startTime, setStartTime] = useState<number | null>(null)
+  const [pausedAt, setPausedAt] = useState<number | null>(null)
+  const pausesRef = useRef<RecordingPause[]>([])
   const [recordedDurationMs, setRecordedDurationMs] = useState<number | null>(
     null
   )
@@ -100,6 +106,8 @@ function App() {
   const {
     startRecording: startCapture,
     stopRecording: stopCapture,
+    pauseRecording: pauseCapture,
+    resumeRecording: resumeCapture,
     takeScreenshot: captureScreenshot,
     recordedBlob,
     screenshotBlob,
@@ -108,7 +116,10 @@ function App() {
     setScreenshotBlob,
   } = useScreenCapture()
 
-  const duration = useTimer(startTime, state === "recording")
+  const duration = useTimer(
+    startTime,
+    state === "recording" && pausedAt === null
+  )
 
   const clearDebuggerState = useCallback(async () => {
     if (debuggerSessionId) {
@@ -141,7 +152,7 @@ function App() {
       } satisfies DebuggerSubmissionInput
     }
 
-    const snapshot = await getDebuggerSessionSnapshot(sessionId).catch(
+    const rawSnapshot = await getDebuggerSessionSnapshot(sessionId).catch(
       (error: unknown) => {
         reportNonFatalError(
           `Failed to load debugger snapshot for session ${sessionId}`,
@@ -151,7 +162,7 @@ function App() {
       }
     )
 
-    if (!snapshot) {
+    if (!rawSnapshot) {
       warnings.push(
         "Debugger snapshot could not be loaded. This report may be missing captured logs."
       )
@@ -166,7 +177,14 @@ function App() {
       } satisfies DebuggerSubmissionInput
     }
 
-    const payload = buildDebuggerSubmissionPayload(snapshot)
+    const pauses = pausesRef.current
+    const snapshot = {
+      ...rawSnapshot,
+      events: rawSnapshot.events.filter(
+        (event) => !isDuringPause(event.timestamp, pauses)
+      ),
+    }
+    const payload = buildDebuggerSubmissionPayload(snapshot, pauses)
     const summary = getDebuggerCaptureSummary(payload)
     const hasPayloadData = hasDebuggerPayloadData(payload)
 
@@ -212,19 +230,51 @@ function App() {
     return markStoppedPromiseRef.current
   }, [captureType, debuggerSessionId])
 
+  // Stopping while paused ends the video where the pause began.
+  const getStoppedAt = useCallback(() => pausedAt ?? Date.now(), [pausedAt])
+
+  const finishRecording = useCallback(
+    (stoppedAt: number) => {
+      recordingStoppedAtRef.current ??= stoppedAt
+      if (startTime) {
+        setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
+      }
+      setPausedAt(null)
+      setState("stopped")
+    },
+    [startTime]
+  )
+
   const handleStopRecording = useCallback(async () => {
-    const stoppedAt = Date.now()
-    recordingStoppedAtRef.current ??= stoppedAt
+    const stoppedAt = getStoppedAt()
     await stopCapture()
-    if (startTime) {
-      setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
+    finishRecording(stoppedAt)
+  }, [finishRecording, getStoppedAt, stopCapture])
+
+  const handleTogglePause = useCallback(() => {
+    if (state !== "recording") {
+      return
     }
-    setState("stopped")
-  }, [startTime, stopCapture])
+
+    const now = Date.now()
+    if (pausedAt === null) {
+      pauseCapture()
+      setPausedAt(now)
+      return
+    }
+
+    resumeCapture()
+    pausesRef.current = [...pausesRef.current, { pausedAt, resumedAt: now }]
+    setStartTime((current) => (current ? current + (now - pausedAt) : now))
+    setPausedAt(null)
+  }, [pauseCapture, pausedAt, resumeCapture, state])
 
   useRecorderRecordingSync({
     captureType,
     onStopFromPopup: handleStopRecording,
+    onTogglePause: handleTogglePause,
+    pausedAt,
+    startTime,
     state,
   })
 
@@ -246,6 +296,8 @@ function App() {
       }
 
       setStartTime(startedAt)
+      setPausedAt(null)
+      pausesRef.current = []
       setRecordedDurationMs(null)
       setState("recording")
     }
@@ -267,13 +319,9 @@ function App() {
   useEffect(() => {
     if (state === "recording" && recordedBlob) {
       // Chrome's "Stop sharing" ended the video.
-      recordingStoppedAtRef.current ??= Date.now()
-      if (startTime) {
-        setRecordedDurationMs(Math.max(0, Date.now() - startTime))
-      }
-      setState("stopped")
+      finishRecording(getStoppedAt())
     }
-  }, [recordedBlob, startTime, state])
+  }, [finishRecording, getStoppedAt, recordedBlob, state])
 
   useEffect(() => {
     if (state !== "stopped") {
@@ -336,6 +384,8 @@ function App() {
     setDebuggerSummary(EMPTY_DEBUGGER_SUMMARY)
     setRecordedDurationMs(null)
     setStartTime(null)
+    setPausedAt(null)
+    pausesRef.current = []
     clearDebuggerState().catch((error: unknown) => {
       reportNonFatalError("Failed to clear debugger state after reset", error)
     })
@@ -438,12 +488,12 @@ function App() {
 
   useEffect(() => {
     if (state === "recording") {
-      document.title = `Recording ${formatDuration(duration)} - Crikket`
+      document.title = `${pausedAt === null ? "Recording" : "Paused"} ${formatDuration(duration)} - Crikket`
       return
     }
 
     document.title = "Crikket Bug Report"
-  }, [duration, state])
+  }, [duration, pausedAt, state])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100/80 p-6 sm:p-8">
@@ -453,7 +503,7 @@ function App() {
             Crikket Bug Report
           </CardTitle>
           <CardDescription className="text-sm">
-            {getStatusLabel(state, isChoosingDisplay)}
+            {getStatusLabel(state, isChoosingDisplay, pausedAt !== null)}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 px-6 py-6">
@@ -474,8 +524,11 @@ function App() {
           {state === "recording" ? (
             <RecordingStep
               duration={duration}
+              isPaused={pausedAt !== null}
               onStopRecording={handleStopRecording}
+              onTogglePause={handleTogglePause}
               stopRecordingShortcut={shortcuts.stopRecording}
+              togglePauseShortcut={shortcuts.togglePause}
             />
           ) : null}
 
@@ -529,12 +582,16 @@ function getReportPageContext(
   return { url: firstPage.url, title: firstPage.title }
 }
 
-function getStatusLabel(state: State, isChoosingDisplay: boolean): string {
+function getStatusLabel(
+  state: State,
+  isChoosingDisplay: boolean,
+  isPaused: boolean
+): string {
   switch (state) {
     case "idle":
       return isChoosingDisplay ? "Share your screen" : "Waiting for capture"
     case "recording":
-      return "Recording in progress..."
+      return isPaused ? "Recording paused" : "Recording in progress..."
     case "stopped":
       return "Review and submit"
     case "success":

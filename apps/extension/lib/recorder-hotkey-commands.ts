@@ -5,12 +5,15 @@ import {
   RECORDER_TAB_ID_STORAGE_KEY,
   RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
   RECORDING_IN_PROGRESS_STORAGE_KEY,
+  RECORDING_PAUSED_AT_STORAGE_KEY,
   RECORDING_STARTED_AT_STORAGE_KEY,
+  TOGGLE_RECORDING_PAUSE_MESSAGE,
 } from "@/lib/capture-context"
 
 export const START_RECORDING_COMMAND = "start-video-recording"
 export const START_SCREENSHOT_COMMAND = "start-screenshot-capture"
 export const STOP_RECORDING_COMMAND = "stop-video-recording"
+export const TOGGLE_PAUSE_COMMAND = "toggle-pause-recording"
 
 export async function handleStartRecordingFromHotkey(): Promise<void> {
   await queueCaptureStartFromHotkey(HOTKEY_START_VIDEO_CAPTURE_STORAGE_KEY)
@@ -51,6 +54,18 @@ export async function handleStopRecordingFromHotkey(): Promise<void> {
   await focusRecorderTab()
 }
 
+// Unlike stop, this leaves the user on the tab they are recording.
+export async function handleTogglePauseFromHotkey(): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage({ type: TOGGLE_RECORDING_PAUSE_MESSAGE })
+  } catch (error: unknown) {
+    reportNonFatalError(
+      "Failed to send TOGGLE_RECORDING_PAUSE for hotkey pause",
+      error
+    )
+  }
+}
+
 export async function handleRecorderHotkeyCommand(
   command: string
 ): Promise<void> {
@@ -66,6 +81,11 @@ export async function handleRecorderHotkeyCommand(
 
   if (command === STOP_RECORDING_COMMAND) {
     await handleStopRecordingFromHotkey()
+    return
+  }
+
+  if (command === TOGGLE_PAUSE_COMMAND) {
+    await handleTogglePauseFromHotkey()
   }
 }
 
@@ -125,5 +145,6 @@ async function clearStaleRecordingState(): Promise<void> {
     RECORDER_TAB_ID_STORAGE_KEY,
     RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
     RECORDING_STARTED_AT_STORAGE_KEY,
+    RECORDING_PAUSED_AT_STORAGE_KEY,
   ])
 }

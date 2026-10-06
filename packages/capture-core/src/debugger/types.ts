@@ -71,6 +71,12 @@ export interface DebuggerSessionTab {
   joinedAt: number
 }
 
+// A stretch of a video recording the user paused. The video has a gap there.
+export interface RecordingPause {
+  pausedAt: number
+  resumedAt: number
+}
+
 export interface DebuggerSessionSnapshot {
   sessionId: string
   captureTabId: number

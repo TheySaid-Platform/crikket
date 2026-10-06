@@ -26,9 +26,11 @@ function App() {
     isRecordingInProgress,
     recordingCountdown: syncedRecordingCountdown,
     recordingDurationMs,
+    isRecordingPaused,
     isStoppingFromPopup,
     stopError,
     stopFromPopup,
+    togglePauseFromPopup,
   } = usePopupRecordingStatus()
 
   const recordingCountdown =
@@ -71,16 +73,19 @@ function App() {
         <PopupCaptureActions
           isBusy={isBusy}
           isRecordingInProgress={isRecordingInProgress}
+          isRecordingPaused={isRecordingPaused}
           onClearPendingCapture={clearPendingCapture}
           onRequestCapture={requestCapture}
           onStartCapture={startCapture}
           onStopFromPopup={stopFromPopup}
+          onTogglePause={togglePauseFromPopup}
           pendingCaptureType={pendingCaptureType}
           recordingCountdown={recordingCountdown}
           recordingDurationMs={recordingDurationMs}
           startRecordingShortcut={shortcuts.startRecording}
           startScreenshotShortcut={shortcuts.startScreenshot}
           stopRecordingShortcut={shortcuts.stopRecording}
+          togglePauseShortcut={shortcuts.togglePause}
         />
 
         <div className="rounded-md border bg-muted p-3">

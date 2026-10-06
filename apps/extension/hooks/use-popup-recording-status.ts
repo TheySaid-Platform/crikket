@@ -4,16 +4,20 @@ import {
   RECORDER_TAB_ID_STORAGE_KEY,
   RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
   RECORDING_IN_PROGRESS_STORAGE_KEY,
+  RECORDING_PAUSED_AT_STORAGE_KEY,
   RECORDING_STARTED_AT_STORAGE_KEY,
+  TOGGLE_RECORDING_PAUSE_MESSAGE,
 } from "@/lib/capture-context"
 
 interface UsePopupRecordingStatusReturn {
   isRecordingInProgress: boolean
   recordingCountdown: number | null
   recordingDurationMs: number
+  isRecordingPaused: boolean
   isStoppingFromPopup: boolean
   stopError: string | null
   stopFromPopup: () => Promise<void>
+  togglePauseFromPopup: () => Promise<void>
 }
 
 export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
@@ -22,6 +26,9 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
     null
   )
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(
+    null
+  )
+  const [recordingPausedAt, setRecordingPausedAt] = useState<number | null>(
     null
   )
   const [recordingDurationMs, setRecordingDurationMs] = useState(0)
@@ -37,6 +44,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
       RECORDER_TAB_ID_STORAGE_KEY,
       RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
       RECORDING_STARTED_AT_STORAGE_KEY,
+      RECORDING_PAUSED_AT_STORAGE_KEY,
     ])
   }, [])
 
@@ -75,6 +83,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
         RECORDER_TAB_ID_STORAGE_KEY,
         RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
         RECORDING_STARTED_AT_STORAGE_KEY,
+        RECORDING_PAUSED_AT_STORAGE_KEY,
       ])
 
       const tabId = result[RECORDER_TAB_ID_STORAGE_KEY]
@@ -83,6 +92,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
           ? (result[RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY] as number)
           : null
       const startedAt = result[RECORDING_STARTED_AT_STORAGE_KEY]
+      const pausedAt = result[RECORDING_PAUSED_AT_STORAGE_KEY]
 
       return {
         isRecording: Boolean(result[RECORDING_IN_PROGRESS_STORAGE_KEY]),
@@ -90,6 +100,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
         countdownEndsAt,
         recordingStartedAtValue:
           typeof startedAt === "number" ? startedAt : null,
+        recordingPausedAtValue: typeof pausedAt === "number" ? pausedAt : null,
       }
     }
 
@@ -121,6 +132,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
       setIsRecordingInProgress(false)
       setRecorderTabId(null)
       setRecordingStartedAt(null)
+      setRecordingPausedAt(null)
       updateCountdown(countdownEndsAt ?? undefined)
     }
 
@@ -129,6 +141,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
       setIsRecordingInProgress(false)
       setRecorderTabId(null)
       setRecordingStartedAt(null)
+      setRecordingPausedAt(null)
       updateCountdown(undefined)
     }
 
@@ -138,6 +151,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
         storedTabId,
         countdownEndsAt,
         recordingStartedAtValue,
+        recordingPausedAtValue,
       } = await readRecordingState()
 
       if (!isRecording) {
@@ -157,6 +171,7 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
       setIsRecordingInProgress(true)
       setRecorderTabId(resolvedRecorderTabId)
       setRecordingStartedAt(recordingStartedAtValue)
+      setRecordingPausedAt(recordingPausedAtValue)
       updateCountdown(countdownEndsAt ?? undefined)
     }
 
@@ -170,7 +185,8 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
           changes[RECORDING_IN_PROGRESS_STORAGE_KEY] ||
           changes[RECORDER_TAB_ID_STORAGE_KEY] ||
           changes[RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY] ||
-          changes[RECORDING_STARTED_AT_STORAGE_KEY]
+          changes[RECORDING_STARTED_AT_STORAGE_KEY] ||
+          changes[RECORDING_PAUSED_AT_STORAGE_KEY]
         )
       ) {
         return
@@ -200,16 +216,21 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
     }
 
     const updateDuration = () => {
-      setRecordingDurationMs(Math.max(0, Date.now() - recordingStartedAt))
+      setRecordingDurationMs(
+        Math.max(0, (recordingPausedAt ?? Date.now()) - recordingStartedAt)
+      )
     }
 
     updateDuration()
+    if (recordingPausedAt !== null) {
+      return
+    }
     const intervalId = window.setInterval(updateDuration, 200)
 
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [isRecordingInProgress, recordingStartedAt])
+  }, [isRecordingInProgress, recordingPausedAt, recordingStartedAt])
 
   const stopFromPopup = useCallback(async () => {
     setIsStoppingFromPopup(true)
@@ -271,12 +292,32 @@ export function usePopupRecordingStatus(): UsePopupRecordingStatusReturn {
     }
   }, [clearRecordingState, recorderTabId])
 
+  // The recorder tab pauses itself and writes the new state to storage,
+  // which updates this popup. The user stays on the tab they are recording.
+  const togglePauseFromPopup = useCallback(async () => {
+    setStopError(null)
+    const response: { ok?: boolean } | null = await chrome.runtime
+      .sendMessage({ type: TOGGLE_RECORDING_PAUSE_MESSAGE })
+      .catch((error: unknown) => {
+        reportNonFatalError(
+          "Failed to toggle recording pause from popup",
+          error
+        )
+        return null
+      })
+    if (!response?.ok) {
+      setStopError("Could not reach the recorder tab to pause the recording.")
+    }
+  }, [])
+
   return {
     isRecordingInProgress,
     recordingCountdown,
     recordingDurationMs,
+    isRecordingPaused: recordingPausedAt !== null,
     isStoppingFromPopup,
     stopError,
     stopFromPopup,
+    togglePauseFromPopup,
   }
 }
