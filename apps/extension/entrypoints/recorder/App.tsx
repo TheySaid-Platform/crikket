@@ -41,6 +41,7 @@ import {
   getDebuggerSessionSnapshot,
   markDebuggerRecordingStarted,
   markDebuggerRecordingStopped,
+  setDebuggerRecordingPaused,
 } from "@/lib/bug-report-debugger/client"
 import { submitBugReportWithUploads } from "@/lib/bug-report-upload"
 import {
@@ -88,6 +89,12 @@ function App() {
     pausedAtRef.current = value
     setPausedAt(value)
   }, [])
+  // Same for the start time: Stop can arrive right after a Resume.
+  const startTimeRef = useRef<number | null>(null)
+  const updateStartTime = useCallback((value: number | null) => {
+    startTimeRef.current = value
+    setStartTime(value)
+  }, [])
   const [recordedDurationMs, setRecordedDurationMs] = useState<number | null>(
     null
   )
@@ -101,6 +108,26 @@ function App() {
   const debuggerSessionId = useMemo(
     () => readDebuggerSessionIdFromSearch(window.location.search),
     []
+  )
+
+  // Tells the background to stop storing events while paused.
+  const syncDebuggerPause = useCallback(
+    (value: number | null) => {
+      if (!debuggerSessionId) {
+        return
+      }
+
+      setDebuggerRecordingPaused({
+        sessionId: debuggerSessionId,
+        pausedAt: value,
+      }).catch((error: unknown) => {
+        reportNonFatalError(
+          `Failed to sync debugger pause for session ${debuggerSessionId}`,
+          error
+        )
+      })
+    },
+    [debuggerSessionId]
   )
 
   const videoSource = useMemo(
@@ -123,10 +150,11 @@ function App() {
     setScreenshotBlob,
   } = useScreenCapture()
 
-  const duration = useTimer(
+  const runningDuration = useTimer(
     startTime,
     state === "recording" && pausedAt === null
   )
+  const duration = getShownDuration(startTime, pausedAt, runningDuration)
 
   const clearDebuggerState = useCallback(async () => {
     if (debuggerSessionId) {
@@ -243,13 +271,14 @@ function App() {
   const finishRecording = useCallback(
     (stoppedAt: number) => {
       recordingStoppedAtRef.current ??= stoppedAt
-      if (startTime) {
-        setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
+      const recordingStartTime = startTimeRef.current
+      if (recordingStartTime) {
+        setRecordedDurationMs(Math.max(0, stoppedAt - recordingStartTime))
       }
       updatePausedAt(null)
       setState("stopped")
     },
-    [startTime, updatePausedAt]
+    [updatePausedAt]
   )
 
   const handleStopRecording = useCallback(async () => {
@@ -268,6 +297,7 @@ function App() {
     if (pauseStart === null) {
       pauseCapture()
       updatePausedAt(now)
+      syncDebuggerPause(now)
       return
     }
 
@@ -276,9 +306,18 @@ function App() {
       ...pausesRef.current,
       { pausedAt: pauseStart, resumedAt: now },
     ]
-    setStartTime((current) => (current ? current + (now - pauseStart) : now))
+    const current = startTimeRef.current
+    updateStartTime(current ? current + (now - pauseStart) : now)
     updatePausedAt(null)
-  }, [pauseCapture, resumeCapture, state, updatePausedAt])
+    syncDebuggerPause(null)
+  }, [
+    pauseCapture,
+    resumeCapture,
+    state,
+    syncDebuggerPause,
+    updatePausedAt,
+    updateStartTime,
+  ])
 
   useRecorderRecordingSync({
     captureType,
@@ -306,13 +345,19 @@ function App() {
         })
       }
 
-      setStartTime(startedAt)
+      updateStartTime(startedAt)
       updatePausedAt(null)
       pausesRef.current = []
       setRecordedDurationMs(null)
       setState("recording")
     }
-  }, [debuggerSessionId, startCapture, updatePausedAt, videoSource])
+  }, [
+    debuggerSessionId,
+    startCapture,
+    updatePausedAt,
+    videoSource,
+    updateStartTime,
+  ])
 
   const handleStartCapture = useCallback(async () => {
     if (captureType === "screenshot") {
@@ -394,7 +439,7 @@ function App() {
     setPreSubmitWarnings([])
     setDebuggerSummary(EMPTY_DEBUGGER_SUMMARY)
     setRecordedDurationMs(null)
-    setStartTime(null)
+    updateStartTime(null)
     updatePausedAt(null)
     pausesRef.current = []
     clearDebuggerState().catch((error: unknown) => {
@@ -574,6 +619,15 @@ function App() {
       </Card>
     </div>
   )
+}
+
+// While paused, show the exact paused time, as the popup does.
+function getShownDuration(
+  startTime: number | null,
+  pausedAt: number | null,
+  runningDuration: number
+): number {
+  return pausedAt !== null && startTime ? pausedAt - startTime : runningDuration
 }
 
 function isWebPageUrl(url: string | undefined): boolean {

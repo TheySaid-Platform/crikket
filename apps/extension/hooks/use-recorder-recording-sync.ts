@@ -29,7 +29,28 @@ export function useRecorderRecordingSync({
   state,
 }: UseRecorderRecordingSyncProps) {
   useEffect(() => {
+    // The flags belong to the tab that is recording. An old report tab or a
+    // screenshot tab must not clear them, unless that tab is gone.
+    const ownsRecordingFlags = async (): Promise<boolean> => {
+      const stored = await chrome.storage.local.get(RECORDER_TAB_ID_STORAGE_KEY)
+      const ownerTabId = stored[RECORDER_TAB_ID_STORAGE_KEY]
+      if (typeof ownerTabId !== "number") {
+        return true
+      }
+
+      const currentTab = await chrome.tabs.getCurrent()
+      if (currentTab?.id === ownerTabId) {
+        return true
+      }
+
+      return !(await chrome.tabs.get(ownerTabId).catch(() => null))
+    }
+
     const clearRecordingFlags = async () => {
+      if (!(await ownsRecordingFlags())) {
+        return
+      }
+
       await chrome.storage.local.set({
         [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
       })

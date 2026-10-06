@@ -7,6 +7,7 @@ import {
   RECORDING_IN_PROGRESS_STORAGE_KEY,
   RECORDING_PAUSED_AT_STORAGE_KEY,
   RECORDING_STARTED_AT_STORAGE_KEY,
+  setRecordingBadge,
   TOGGLE_RECORDING_PAUSE_MESSAGE,
 } from "@/lib/capture-context"
 
@@ -137,7 +138,7 @@ async function resolveRecorderTabId(): Promise<number | null> {
   return mostRecentRecorderTab?.id ?? null
 }
 
-async function clearStaleRecordingState(): Promise<void> {
+export async function clearStaleRecordingState(): Promise<void> {
   await chrome.storage.local.set({
     [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
   })
@@ -147,4 +148,5 @@ async function clearStaleRecordingState(): Promise<void> {
     RECORDING_STARTED_AT_STORAGE_KEY,
     RECORDING_PAUSED_AT_STORAGE_KEY,
   ])
+  await setRecordingBadge(null)
 }

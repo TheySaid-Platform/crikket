@@ -8,6 +8,7 @@ import {
   MARK_RECORDING_STOPPED_MESSAGE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
+  SET_RECORDING_PAUSED_MESSAGE,
   START_SESSION_MESSAGE,
 } from "@crikket/capture-core/debugger/constants"
 import type { DebuggerRuntimeResponse } from "@crikket/capture-core/debugger/types"
@@ -87,6 +88,11 @@ export function registerDebuggerBackgroundListeners(): void {
         }
         case MARK_RECORDING_STOPPED_MESSAGE: {
           await store.markSessionRecordingStopped(message.payload)
+          safeSendResponse({ ok: true, data: undefined })
+          return
+        }
+        case SET_RECORDING_PAUSED_MESSAGE: {
+          await store.setSessionRecordingPaused(message.payload)
           safeSendResponse({ ok: true, data: undefined })
           return
         }
