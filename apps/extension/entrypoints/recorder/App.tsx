@@ -80,7 +80,14 @@ function App() {
   // the length of the video so far.
   const [startTime, setStartTime] = useState<number | null>(null)
   const [pausedAt, setPausedAt] = useState<number | null>(null)
+  // Toggle and stop read this, not the state: a second pause message can
+  // arrive before React re-renders with the new pausedAt.
+  const pausedAtRef = useRef<number | null>(null)
   const pausesRef = useRef<RecordingPause[]>([])
+  const updatePausedAt = useCallback((value: number | null) => {
+    pausedAtRef.current = value
+    setPausedAt(value)
+  }, [])
   const [recordedDurationMs, setRecordedDurationMs] = useState<number | null>(
     null
   )
@@ -231,7 +238,7 @@ function App() {
   }, [captureType, debuggerSessionId])
 
   // Stopping while paused ends the video where the pause began.
-  const getStoppedAt = useCallback(() => pausedAt ?? Date.now(), [pausedAt])
+  const getStoppedAt = useCallback(() => pausedAtRef.current ?? Date.now(), [])
 
   const finishRecording = useCallback(
     (stoppedAt: number) => {
@@ -239,10 +246,10 @@ function App() {
       if (startTime) {
         setRecordedDurationMs(Math.max(0, stoppedAt - startTime))
       }
-      setPausedAt(null)
+      updatePausedAt(null)
       setState("stopped")
     },
-    [startTime]
+    [startTime, updatePausedAt]
   )
 
   const handleStopRecording = useCallback(async () => {
@@ -257,17 +264,21 @@ function App() {
     }
 
     const now = Date.now()
-    if (pausedAt === null) {
+    const pauseStart = pausedAtRef.current
+    if (pauseStart === null) {
       pauseCapture()
-      setPausedAt(now)
+      updatePausedAt(now)
       return
     }
 
     resumeCapture()
-    pausesRef.current = [...pausesRef.current, { pausedAt, resumedAt: now }]
-    setStartTime((current) => (current ? current + (now - pausedAt) : now))
-    setPausedAt(null)
-  }, [pauseCapture, pausedAt, resumeCapture, state])
+    pausesRef.current = [
+      ...pausesRef.current,
+      { pausedAt: pauseStart, resumedAt: now },
+    ]
+    setStartTime((current) => (current ? current + (now - pauseStart) : now))
+    updatePausedAt(null)
+  }, [pauseCapture, resumeCapture, state, updatePausedAt])
 
   useRecorderRecordingSync({
     captureType,
@@ -296,12 +307,12 @@ function App() {
       }
 
       setStartTime(startedAt)
-      setPausedAt(null)
+      updatePausedAt(null)
       pausesRef.current = []
       setRecordedDurationMs(null)
       setState("recording")
     }
-  }, [debuggerSessionId, startCapture, videoSource])
+  }, [debuggerSessionId, startCapture, updatePausedAt, videoSource])
 
   const handleStartCapture = useCallback(async () => {
     if (captureType === "screenshot") {
@@ -384,7 +395,7 @@ function App() {
     setDebuggerSummary(EMPTY_DEBUGGER_SUMMARY)
     setRecordedDurationMs(null)
     setStartTime(null)
-    setPausedAt(null)
+    updatePausedAt(null)
     pausesRef.current = []
     clearDebuggerState().catch((error: unknown) => {
       reportNonFatalError("Failed to clear debugger state after reset", error)
