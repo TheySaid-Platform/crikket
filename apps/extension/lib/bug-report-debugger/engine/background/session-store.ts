@@ -78,6 +78,11 @@ interface MarkRecordingStoppedPayload {
   recordingStoppedAt: number
 }
 
+interface SetRecordingPausedPayload {
+  sessionId: string
+  pausedAt: number | null
+}
+
 // Where a batch of page events came from: the sending page's own URL (top
 // frame), and the tab's current URL.
 interface PageEventSource {
@@ -104,6 +109,9 @@ interface DebuggerSessionStore {
   ) => Promise<void>
   markSessionRecordingStopped: (
     payload: MarkRecordingStoppedPayload
+  ) => Promise<void>
+  setSessionRecordingPaused: (
+    payload: SetRecordingPausedPayload
   ) => Promise<void>
   discardSession: (sessionId: string) => Promise<void>
   ensureDebuggerScriptForTab: (tabId: number, url?: string) => Promise<void>
@@ -288,7 +296,13 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
+    // Paused time is not in the report. Storing it anyway could push the
+    // recorded events out of the capped list during a long pause.
+    const pausedAt = session.recordingPausedAt
     for (const event of events) {
+      if (pausedAt !== null && event.timestamp > pausedAt) {
+        continue
+      }
       // Network events are not deduplicated: webRequest reports each request
       // once, so two identical ones are two real requests.
       if (event.kind === "action") {
@@ -433,7 +447,11 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    if (session.lastSwitchTabId === tabId) {
+    // A switch made while paused is recorded on resume instead.
+    if (
+      session.lastSwitchTabId === tabId ||
+      session.recordingPausedAt !== null
+    ) {
       return
     }
     session.lastSwitchTabId = tabId
@@ -518,6 +536,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       recordingStartedAt:
         payload.captureType === "screenshot" ? startedAt : null,
       recordingStoppedAt: null,
+      recordingPausedAt: null,
       followTabs:
         payload.captureType === "video" && payload.followTabs === true,
       recorderTabId: null,
@@ -694,6 +713,39 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     setCaptureStateForSession(session.sessionId, false)
   }
 
+  const setSessionRecordingPaused = async (
+    payload: SetRecordingPausedPayload
+  ) => {
+    await ensureLoaded()
+
+    const session = sessionsById.get(payload.sessionId)
+    if (!session) {
+      return
+    }
+
+    session.recordingPausedAt =
+      payload.pausedAt === null ? null : Math.floor(payload.pausedAt)
+    schedulePersist()
+
+    // The user may have moved to another tab while paused; the report shows
+    // that switch at the moment the recording resumed.
+    const activeTabId = session.activeTabId
+    if (
+      session.recordingPausedAt !== null ||
+      !session.followTabs ||
+      activeTabId === null ||
+      activeTabId === session.lastSwitchTabId
+    ) {
+      return
+    }
+
+    const activeTab = await chrome.tabs.get(activeTabId).catch(() => null)
+    if (activeTab && isTrackableTab(activeTab)) {
+      await trackTab(session, activeTab)
+      recordTabSwitch(session, activeTab)
+    }
+  }
+
   const setCaptureStateForSession = (sessionId: string, enabled: boolean) => {
     for (const [tabId, mappedSessionId] of tabToSession) {
       if (mappedSessionId === sessionId) {
@@ -844,6 +896,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     getSessionSnapshot,
     markSessionRecordingStarted,
     markSessionRecordingStopped,
+    setSessionRecordingPaused,
     discardSession,
     ensureDebuggerScriptForTab,
     handleTabActivated,

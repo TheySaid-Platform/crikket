@@ -3,6 +3,7 @@ import {
   GET_SESSION_SNAPSHOT_MESSAGE,
   MARK_RECORDING_STARTED_MESSAGE,
   MARK_RECORDING_STOPPED_MESSAGE,
+  SET_RECORDING_PAUSED_MESSAGE,
   START_SESSION_MESSAGE,
 } from "@crikket/capture-core/debugger/constants"
 import type {
@@ -39,6 +40,16 @@ export async function markDebuggerRecordingStopped(input: {
 }): Promise<void> {
   await sendDebuggerMessage<undefined>({
     type: MARK_RECORDING_STOPPED_MESSAGE,
+    payload: input,
+  })
+}
+
+export async function setDebuggerRecordingPaused(input: {
+  sessionId: string
+  pausedAt: number | null
+}): Promise<void> {
+  await sendDebuggerMessage<undefined>({
+    type: SET_RECORDING_PAUSED_MESSAGE,
     payload: input,
   })
 }

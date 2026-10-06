@@ -1,4 +1,8 @@
-import type { BugReportDebuggerPayload, DebuggerSessionSnapshot } from "./types"
+import type {
+  BugReportDebuggerPayload,
+  DebuggerSessionSnapshot,
+  RecordingPause,
+} from "./types"
 
 export function hasDebuggerPayloadData(
   payload: BugReportDebuggerPayload
@@ -10,14 +14,27 @@ export function hasDebuggerPayloadData(
   )
 }
 
+// True while the recording was paused. The video has nothing from then, so
+// neither does the report.
+export function isDuringPause(
+  timestamp: number,
+  pauses: readonly RecordingPause[]
+): boolean {
+  return pauses.some(
+    (pause) => timestamp > pause.pausedAt && timestamp < pause.resumedAt
+  )
+}
+
 export function buildDebuggerSubmissionPayload(
-  snapshot: DebuggerSessionSnapshot
+  snapshot: DebuggerSessionSnapshot,
+  pauses: readonly RecordingPause[] = []
 ): BugReportDebuggerPayload {
   const anchorTimestamp = snapshot.recordingStartedAt ?? snapshot.startedAt
   const stoppedAt = snapshot.recordingStoppedAt ?? null
   // What happens while the user fills in the form is not part of the bug.
   const events = snapshot.events
     .filter((event) => stoppedAt === null || event.timestamp <= stoppedAt)
+    .filter((event) => !isDuringPause(event.timestamp, pauses))
     .sort((a, b) => a.timestamp - b.timestamp)
 
   const payload: BugReportDebuggerPayload = {
@@ -28,7 +45,11 @@ export function buildDebuggerSubmissionPayload(
 
   for (const event of events) {
     const timestamp = new Date(event.timestamp).toISOString()
-    const offset = toOffset(event.timestamp, anchorTimestamp)
+    // The video skips paused time, so later events move back by it.
+    const offset = toOffset(
+      event.timestamp - getPausedTimeBefore(event.timestamp, pauses),
+      anchorTimestamp
+    )
     const tabContext = { tabId: event.tabId, pageUrl: event.pageUrl }
 
     if (event.kind === "action") {
@@ -72,6 +93,19 @@ export function buildDebuggerSubmissionPayload(
   }
 
   return payload
+}
+
+function getPausedTimeBefore(
+  timestamp: number,
+  pauses: readonly RecordingPause[]
+): number {
+  let pausedMs = 0
+  for (const pause of pauses) {
+    if (timestamp >= pause.resumedAt) {
+      pausedMs += pause.resumedAt - pause.pausedAt
+    }
+  }
+  return pausedMs
 }
 
 function toOffset(

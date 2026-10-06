@@ -34,6 +34,13 @@ export default defineConfig({
           mac: "Alt+Shift+S",
         },
       },
+      "toggle-pause-recording": {
+        description: "Pause or resume video recording",
+        suggested_key: {
+          default: "Alt+Shift+P",
+          mac: "Alt+Shift+P",
+        },
+      },
     },
     permissions: [
       "activeTab",

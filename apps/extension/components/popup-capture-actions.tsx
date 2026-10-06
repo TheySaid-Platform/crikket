@@ -1,5 +1,5 @@
 import { Button } from "@crikket/ui/components/ui/button"
-import { Camera, Monitor, Video } from "lucide-react"
+import { Camera, Monitor, Pause, Play, Video } from "lucide-react"
 import { ShortcutKbd } from "@/components/shortcut-kbd"
 import type { PopupCaptureType } from "@/hooks/use-popup-capture"
 import { formatDuration } from "@/lib/utils"
@@ -7,14 +7,17 @@ import { formatDuration } from "@/lib/utils"
 interface PopupCaptureActionsProps {
   isBusy: boolean
   isRecordingInProgress: boolean
+  isRecordingPaused: boolean
   recordingCountdown: number | null
   recordingDurationMs: number
   pendingCaptureType: PopupCaptureType | null
   startRecordingShortcut: string | null
   startScreenshotShortcut: string | null
   stopRecordingShortcut: string | null
+  togglePauseShortcut: string | null
   onRequestCapture: (captureType: PopupCaptureType) => void
   onStopFromPopup: () => Promise<void>
+  onTogglePause: () => Promise<void>
   onStartCapture: (captureType: PopupCaptureType) => Promise<void>
   onClearPendingCapture: () => void
 }
@@ -22,14 +25,17 @@ interface PopupCaptureActionsProps {
 export function PopupCaptureActions({
   isBusy,
   isRecordingInProgress,
+  isRecordingPaused,
   recordingCountdown,
   recordingDurationMs,
   pendingCaptureType,
   startRecordingShortcut,
   startScreenshotShortcut,
   stopRecordingShortcut,
+  togglePauseShortcut,
   onRequestCapture,
   onStopFromPopup,
+  onTogglePause,
   onStartCapture,
   onClearPendingCapture,
 }: PopupCaptureActionsProps) {
@@ -46,14 +52,40 @@ export function PopupCaptureActions({
     <>
       {isRecordingInProgress ? (
         <div className="space-y-2">
-          <div className="rounded-md border bg-destructive/5 p-3 text-center">
-            <p className="font-medium text-destructive text-sm">
-              Recording now
+          <div
+            className={
+              isRecordingPaused
+                ? "rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-center text-amber-700"
+                : "rounded-md border bg-destructive/5 p-3 text-center text-destructive"
+            }
+          >
+            <p className="font-medium text-sm">
+              {isRecordingPaused ? "Recording paused" : "Recording now"}
             </p>
-            <p className="font-mono font-semibold text-destructive text-xl">
+            <p className="font-mono font-semibold text-xl">
               {formatDuration(recordingDurationMs)}
             </p>
           </div>
+          <Button
+            className="w-full justify-start gap-3"
+            disabled={isBusy}
+            onClick={() => onTogglePause()}
+            size="lg"
+            variant="outline"
+          >
+            {isRecordingPaused ? (
+              <Play className="h-5 w-5" />
+            ) : (
+              <Pause className="h-5 w-5" />
+            )}
+            <span>
+              {isRecordingPaused ? "Resume Recording" : "Pause Recording"}
+            </span>
+            <ShortcutKbd
+              className="bg-muted text-foreground"
+              shortcut={togglePauseShortcut}
+            />
+          </Button>
           <Button
             className="w-full justify-start gap-3"
             disabled={isBusy}

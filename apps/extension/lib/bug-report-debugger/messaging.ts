@@ -8,6 +8,7 @@ import {
   PAGE_BRIDGE_SOURCE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
+  SET_RECORDING_PAUSED_MESSAGE,
   START_SESSION_MESSAGE,
 } from "@crikket/capture-core/debugger/constants"
 import { isRecordLike } from "@crikket/capture-core/debugger/normalize"
@@ -116,6 +117,7 @@ export function isDebuggerRuntimeMessage(
     messageType === START_SESSION_MESSAGE ||
     messageType === MARK_RECORDING_STARTED_MESSAGE ||
     messageType === MARK_RECORDING_STOPPED_MESSAGE ||
+    messageType === SET_RECORDING_PAUSED_MESSAGE ||
     messageType === GET_SESSION_SNAPSHOT_MESSAGE ||
     messageType === DISCARD_SESSION_MESSAGE ||
     messageType === PAGE_EVENT_MESSAGE ||

@@ -155,6 +155,43 @@ describe("debugger payload regression", () => {
     ])
   })
 
+  it("leaves out paused time and lines later events up with the video", () => {
+    const payload = buildDebuggerSubmissionPayload(
+      {
+        sessionId: "session_4",
+        captureTabId: 1,
+        captureType: "video",
+        startedAt: 1000,
+        recordingStartedAt: 1000,
+        tabs: [{ tabId: 1, joinedAt: 1000 }],
+        events: [
+          { kind: "console", timestamp: 1500, level: "log", message: "before" },
+          { kind: "console", timestamp: 2500, level: "log", message: "paused" },
+          { kind: "console", timestamp: 3500, level: "log", message: "after" },
+          {
+            kind: "console",
+            timestamp: 5500,
+            level: "log",
+            message: "paused again",
+          },
+          { kind: "console", timestamp: 7000, level: "log", message: "last" },
+        ],
+      },
+      [
+        { pausedAt: 2000, resumedAt: 3000 },
+        { pausedAt: 5000, resumedAt: 6000 },
+      ]
+    )
+
+    expect(
+      payload.logs.map((log) => [log.message, log.offset] as const)
+    ).toEqual([
+      ["before", 500],
+      ["after", 1500],
+      ["last", 4000],
+    ])
+  })
+
   it("detects whether a payload contains any debugger data", () => {
     expect(
       hasDebuggerPayloadData({

@@ -5,22 +5,52 @@ import {
   RECORDER_TAB_ID_STORAGE_KEY,
   RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
   RECORDING_IN_PROGRESS_STORAGE_KEY,
+  RECORDING_PAUSED_AT_STORAGE_KEY,
   RECORDING_STARTED_AT_STORAGE_KEY,
+  setRecordingBadge,
+  TOGGLE_RECORDING_PAUSE_MESSAGE,
 } from "@/lib/capture-context"
 
 interface UseRecorderRecordingSyncProps {
   captureType: CaptureType
   state: "idle" | "recording" | "stopped" | "submitting" | "success"
+  startTime: number | null
+  pausedAt: number | null
   onStopFromPopup: () => Promise<void>
+  onTogglePause: () => void
 }
 
 export function useRecorderRecordingSync({
   captureType,
   onStopFromPopup,
+  onTogglePause,
+  pausedAt,
+  startTime,
   state,
 }: UseRecorderRecordingSyncProps) {
   useEffect(() => {
+    // The flags belong to the tab that is recording. An old report tab or a
+    // screenshot tab must not clear them, unless that tab is gone.
+    const ownsRecordingFlags = async (): Promise<boolean> => {
+      const stored = await chrome.storage.local.get(RECORDER_TAB_ID_STORAGE_KEY)
+      const ownerTabId = stored[RECORDER_TAB_ID_STORAGE_KEY]
+      if (typeof ownerTabId !== "number") {
+        return true
+      }
+
+      const currentTab = await chrome.tabs.getCurrent()
+      if (currentTab?.id === ownerTabId) {
+        return true
+      }
+
+      return !(await chrome.tabs.get(ownerTabId).catch(() => null))
+    }
+
     const clearRecordingFlags = async () => {
+      if (!(await ownsRecordingFlags())) {
+        return
+      }
+
       await chrome.storage.local.set({
         [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
       })
@@ -28,7 +58,9 @@ export function useRecorderRecordingSync({
         RECORDER_TAB_ID_STORAGE_KEY,
         RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
         RECORDING_STARTED_AT_STORAGE_KEY,
+        RECORDING_PAUSED_AT_STORAGE_KEY,
       ])
+      await setRecordingBadge(null)
     }
 
     const syncRecordingState = async () => {
@@ -58,12 +90,14 @@ export function useRecorderRecordingSync({
         const currentTab = await chrome.tabs.getCurrent()
         await chrome.storage.local.set({
           [RECORDING_IN_PROGRESS_STORAGE_KEY]: true,
-          [RECORDING_STARTED_AT_STORAGE_KEY]: Date.now(),
+          [RECORDING_STARTED_AT_STORAGE_KEY]: startTime ?? Date.now(),
+          [RECORDING_PAUSED_AT_STORAGE_KEY]: pausedAt,
           [RECORDER_TAB_ID_STORAGE_KEY]: currentTab?.id,
         })
         await chrome.storage.local.remove([
           RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
         ])
+        await setRecordingBadge(pausedAt === null ? "recording" : "paused")
         return
       }
 
@@ -73,12 +107,22 @@ export function useRecorderRecordingSync({
     syncRecordingState().catch((error: unknown) => {
       reportNonFatalError("Failed to sync recorder recording state", error)
     })
-  }, [captureType, state])
+  }, [captureType, pausedAt, startTime, state])
 
   useEffect(() => {
-    const handleMessage = (message: { type?: string }) => {
-      if (message.type !== "STOP_RECORDING_FROM_POPUP") return
+    const handleMessage = (
+      message: { type?: string },
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (response: { ok: boolean }) => void
+    ) => {
       if (state !== "recording") return
+      if (message.type === TOGGLE_RECORDING_PAUSE_MESSAGE) {
+        onTogglePause()
+        // Lets the popup tell a paused recording from a missing recorder.
+        sendResponse({ ok: true })
+        return
+      }
+      if (message.type !== "STOP_RECORDING_FROM_POPUP") return
       onStopFromPopup().catch((error: unknown) => {
         reportNonFatalError(
           "Failed to stop recording from popup trigger",
@@ -92,7 +136,7 @@ export function useRecorderRecordingSync({
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage)
     }
-  }, [onStopFromPopup, state])
+  }, [onStopFromPopup, onTogglePause, state])
 
   useEffect(() => {
     return () => {
@@ -103,7 +147,9 @@ export function useRecorderRecordingSync({
         RECORDER_TAB_ID_STORAGE_KEY,
         RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
         RECORDING_STARTED_AT_STORAGE_KEY,
+        RECORDING_PAUSED_AT_STORAGE_KEY,
       ])
+      setRecordingBadge(null)
     }
   }, [])
 }

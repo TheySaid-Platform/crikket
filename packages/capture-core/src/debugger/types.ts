@@ -8,6 +8,7 @@ import type {
   PAGE_BRIDGE_SOURCE,
   PAGE_EVENT_MESSAGE,
   PAGE_EVENTS_MESSAGE,
+  SET_RECORDING_PAUSED_MESSAGE,
   START_SESSION_MESSAGE,
 } from "./constants"
 
@@ -69,6 +70,12 @@ export interface DebuggerSessionTab {
   url?: string
   title?: string
   joinedAt: number
+}
+
+// A stretch of a video recording the user paused. The video has a gap there.
+export interface RecordingPause {
+  pausedAt: number
+  resumedAt: number
 }
 
 export interface DebuggerSessionSnapshot {
@@ -164,6 +171,15 @@ export interface DebuggerMarkRecordingStoppedMessage {
   }
 }
 
+export interface DebuggerSetRecordingPausedMessage {
+  type: typeof SET_RECORDING_PAUSED_MESSAGE
+  payload: {
+    sessionId: string
+    // When the pause began, or null on resume.
+    pausedAt: number | null
+  }
+}
+
 export interface DebuggerGetSessionSnapshotMessage {
   type: typeof GET_SESSION_SNAPSHOT_MESSAGE
   payload: {
@@ -210,6 +226,7 @@ export type DebuggerRuntimeMessage =
   | DebuggerStartSessionMessage
   | DebuggerMarkRecordingStartedMessage
   | DebuggerMarkRecordingStoppedMessage
+  | DebuggerSetRecordingPausedMessage
   | DebuggerGetSessionSnapshotMessage
   | DebuggerDiscardSessionMessage
   | DebuggerPageEventMessage
@@ -230,6 +247,8 @@ export interface StoredDebuggerSession {
   startedAt: number
   recordingStartedAt: number | null
   recordingStoppedAt: number | null
+  // Set while the recording is paused. Events from then are not stored.
+  recordingPausedAt: number | null
   // Record Full Screen follows the user into other tabs; Record This Tab
   // only ever covers the capture tab.
   followTabs: boolean

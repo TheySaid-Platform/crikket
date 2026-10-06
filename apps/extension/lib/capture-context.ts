@@ -16,7 +16,12 @@ export const RECORDING_IN_PROGRESS_STORAGE_KEY = "recordingInProgress"
 export const RECORDER_TAB_ID_STORAGE_KEY = "recorderTabId"
 export const RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY =
   "recordingCountdownEndsAt"
+// Moved forward by the paused time on each resume, so the elapsed recording
+// time is always (pausedAt ?? now) - startedAt.
 export const RECORDING_STARTED_AT_STORAGE_KEY = "recordingStartedAt"
+// When the current pause began; null while recording.
+export const RECORDING_PAUSED_AT_STORAGE_KEY = "recordingPausedAt"
+export const TOGGLE_RECORDING_PAUSE_MESSAGE = "TOGGLE_RECORDING_PAUSE"
 export const HOTKEY_START_VIDEO_CAPTURE_STORAGE_KEY = "hotkeyStartVideoCapture"
 export const HOTKEY_START_SCREENSHOT_CAPTURE_STORAGE_KEY =
   "hotkeyStartScreenshotCapture"
@@ -69,4 +74,24 @@ export const readAndClearCaptureTabId = async (): Promise<number | null> => {
 
   const tabId = stored[CAPTURE_TAB_ID_STORAGE_KEY]
   return typeof tabId === "number" ? tabId : null
+}
+
+// The toolbar badge shows on every tab, so the user can tell a full screen
+// recording is paused from whichever tab they are on.
+const RECORDING_BADGES = {
+  recording: { text: "REC", color: "#dc2626" },
+  paused: { text: "II", color: "#d97706" },
+} as const
+
+export const setRecordingBadge = async (
+  status: keyof typeof RECORDING_BADGES | null
+): Promise<void> => {
+  if (!status) {
+    await chrome.action.setBadgeText({ text: "" })
+    return
+  }
+
+  const badge = RECORDING_BADGES[status]
+  await chrome.action.setBadgeBackgroundColor({ color: badge.color })
+  await chrome.action.setBadgeText({ text: badge.text })
 }

@@ -32,6 +32,7 @@ export function normalizeStoredSession(
       : asOptionalNumber(value.recordingStartedAt)
   const recorderTabId = asOptionalNumber(value.recorderTabId)
   const recordingStoppedAt = asOptionalNumber(value.recordingStoppedAt)
+  const recordingPausedAt = asOptionalNumber(value.recordingPausedAt)
   const activeTabId = asOptionalNumber(value.activeTabId)
   const lastSwitchTabId = asOptionalNumber(value.lastSwitchTabId)
 
@@ -62,6 +63,7 @@ export function normalizeStoredSession(
     startedAt,
     recordingStartedAt: recordingStartedAt ?? null,
     recordingStoppedAt: recordingStoppedAt ?? null,
+    recordingPausedAt: recordingPausedAt ?? null,
     followTabs: value.followTabs === true,
     recorderTabId: recorderTabId ?? null,
     activeTabId: activeTabId ?? null,

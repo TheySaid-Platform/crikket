@@ -95,6 +95,7 @@ describe("debugger normalization regression", () => {
       startedAt: 1000,
       recordingStartedAt: 1500,
       recordingStoppedAt: null,
+      recordingPausedAt: null,
       // Older stored sessions never follow tabs.
       followTabs: false,
       recorderTabId: null,

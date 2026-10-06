@@ -17,6 +17,8 @@ export interface UseScreenCaptureReturn {
   error: string | null
   startRecording: (source?: VideoSource) => Promise<boolean>
   stopRecording: () => Promise<Blob | null>
+  pauseRecording: () => void
+  resumeRecording: () => void
   takeScreenshot: () => Promise<Blob | null>
   reset: () => void
   setRecordedBlob: (blob: Blob | null) => void
@@ -94,7 +96,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
           stopCaptureStream(stream)
         }
         stream.getVideoTracks()[0].onended = () => {
-          if (mediaRecorderRef.current?.state === "recording") {
+          if (isRecorderActive(mediaRecorderRef.current)) {
             mediaRecorderRef.current.stop()
           }
         }
@@ -113,10 +115,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {
-      if (
-        !mediaRecorderRef.current ||
-        mediaRecorderRef.current.state !== "recording"
-      ) {
+      if (!isRecorderActive(mediaRecorderRef.current)) {
         resolve(null)
         return
       }
@@ -135,6 +134,18 @@ export function useScreenCapture(): UseScreenCaptureReturn {
 
       mediaRecorderRef.current.stop()
     })
+  }, [])
+
+  const pauseRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.pause()
+    }
+  }, [])
+
+  const resumeRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === "paused") {
+      mediaRecorderRef.current.resume()
+    }
   }, [])
 
   const takeScreenshot = useCallback(async (): Promise<Blob | null> => {
@@ -199,7 +210,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     setError(null)
     setIsRecording(false)
 
-    if (mediaRecorderRef.current?.state === "recording") {
+    if (isRecorderActive(mediaRecorderRef.current)) {
       mediaRecorderRef.current.stop()
     }
     if (streamRef.current) {
@@ -214,11 +225,20 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     error,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     takeScreenshot,
     reset,
     setRecordedBlob,
     setScreenshotBlob,
   }
+}
+
+// Recording or paused; a paused recorder still has to be stopped.
+function isRecorderActive(
+  recorder: MediaRecorder | null
+): recorder is MediaRecorder {
+  return recorder !== null && recorder.state !== "inactive"
 }
 
 const TAB_SWITCH_SETTLE_MS = 300
