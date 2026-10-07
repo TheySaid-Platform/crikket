@@ -10,7 +10,7 @@ import {
   Square,
   Video,
 } from "lucide-react"
-import { useState } from "react"
+import { type ReactNode, useState } from "react"
 import { MicToggleButton } from "@/components/mic-toggle-button"
 import { ShortcutKbd } from "@/components/shortcut-kbd"
 import type { PopupCaptureType } from "@/hooks/use-popup-capture"
@@ -43,6 +43,8 @@ interface PopupCaptureActionsProps {
   onClearPendingCapture: () => void
   // Ends a full-page screenshot early, keeping what was captured so far.
   onStopFullPage: () => void
+  // Shown with the capture options, not while recording or capturing.
+  instantReplayPanel: ReactNode
 }
 
 interface CaptureOption {
@@ -119,6 +121,7 @@ export function PopupCaptureActions({
   onStartCapture,
   onClearPendingCapture,
   onStopFullPage,
+  instantReplayPanel,
 }: PopupCaptureActionsProps) {
   if (recordingCountdown) {
     return <CountdownPanel seconds={recordingCountdown} />
@@ -182,6 +185,11 @@ export function PopupCaptureActions({
         <div className="grid grid-cols-2 gap-2">
           {renderTiles(CAPTURE_OPTIONS)}
         </div>
+      </section>
+
+      <section className="space-y-2">
+        <SectionLabel>Instant replay</SectionLabel>
+        {instantReplayPanel}
       </section>
 
       {pendingCaptureType ? (

@@ -101,7 +101,7 @@ async function clearBackgroundRecording(): Promise<void> {
   await showRecordingBadge(null)
 }
 
-async function hasOffscreenDocument(): Promise<boolean> {
+export async function hasOffscreenDocument(): Promise<boolean> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
     documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
@@ -109,7 +109,7 @@ async function hasOffscreenDocument(): Promise<boolean> {
   return contexts.length > 0
 }
 
-async function ensureOffscreenDocument(): Promise<void> {
+export async function ensureOffscreenDocument(): Promise<void> {
   if (await hasOffscreenDocument()) return
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_DOCUMENT_PATH,
@@ -124,13 +124,13 @@ async function ensureOffscreenDocument(): Promise<void> {
   })
 }
 
-async function closeOffscreenDocument(): Promise<void> {
+export async function closeOffscreenDocument(): Promise<void> {
   if (await hasOffscreenDocument()) {
     await chrome.offscreen.closeDocument()
   }
 }
 
-async function sendToOffscreen(
+export async function sendToOffscreen(
   request: OffscreenRequest
 ): Promise<OffscreenResponse> {
   try {
@@ -182,7 +182,7 @@ async function keepDebuggerSession(sessionId: string): Promise<void> {
 
 // Saves a copy of the capture's logs next to it, so its review has them even
 // if the live session is lost. Logs are the heart of a report.
-async function backUpLogs(sessionId: string): Promise<void> {
+export async function backUpLogs(sessionId: string): Promise<void> {
   try {
     const snapshot =
       await getDebuggerSessionStore()?.getSessionSnapshot(sessionId)
@@ -389,10 +389,10 @@ async function getReviewTabId(
 
 // Shows the review over the page, the way Jam does, and falls back to a tab
 // when that page has no floating bar script (closed tab, chrome:// page).
-async function openReview(input: {
+export async function openReview(input: {
   tabId: number
   debuggerSessionId: string
-  captureType: "video" | "screenshot"
+  captureType: "video" | "screenshot" | "replay"
   wide?: boolean
 }): Promise<void> {
   const reviewUrl = new URL(

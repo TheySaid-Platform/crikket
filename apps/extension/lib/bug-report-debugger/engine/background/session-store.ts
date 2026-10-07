@@ -19,6 +19,10 @@ import type {
 } from "@crikket/capture-core/debugger/types"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import {
+  INSTANT_REPLAY_CHECKOUT_MS,
+  INSTANT_REPLAY_WINDOW_MS,
+} from "@/lib/instant-replay/protocol"
+import {
   createSessionId,
   injectDebuggerScriptIntoTab,
   isInjectablePageUrl,
@@ -35,6 +39,11 @@ const UNATTACHED_SESSION_JOIN_WINDOW_MS = 60_000
 // browser restart or an extension reload. Finding it on load means the tab ids
 // in stored sessions still point at the same tabs.
 const BROWSER_SESSION_MARKER_KEY = "crikketDebuggerBrowserSession"
+// Every tab's recent events, for the logs of an instant replay: as far back as
+// a replay can go (its window plus a full snapshot interval).
+const MAX_RECENT_EVENT_AGE_MS =
+  INSTANT_REPLAY_WINDOW_MS + INSTANT_REPLAY_CHECKOUT_MS
+const MAX_RECENT_EVENT_COUNT = 2000
 
 // Stamped on every event, so keep it short and drop query strings and hashes,
 // which can hold tokens (e.g. OAuth callbacks).
@@ -69,6 +78,8 @@ interface StartSessionPayload {
   captureTabId: number
   captureType: "video" | "screenshot"
   instantReplayLookbackMs?: number
+  // Takes the recent events of every tab, for a replay of the whole screen.
+  instantReplayAllTabs?: boolean
   followTabs?: boolean
 }
 
@@ -359,8 +370,6 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
 
     const now = Date.now()
-    const MAX_RECENT_EVENT_AGE_MS = 60_000
-    const MAX_RECENT_EVENT_COUNT = 250
     const existing = recentEventsByTab.get(tabId) ?? []
 
     const merged = [...existing, ...events].filter((event) => {
@@ -558,13 +567,28 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       payload.instantReplayLookbackMs > 0
         ? Math.floor(payload.instantReplayLookbackMs)
         : 0
+    const lookbackTabIds = payload.instantReplayAllTabs
+      ? Array.from(recentEventsByTab.keys())
+      : [payload.captureTabId]
     const instantReplayEvents =
       instantReplayLookbackMs > 0
-        ? consumeInstantReplayEvents(
-            payload.captureTabId,
-            instantReplayLookbackMs
-          )
+        ? lookbackTabIds
+            .flatMap((tabId) =>
+              consumeInstantReplayEvents(tabId, instantReplayLookbackMs)
+            )
+            .sort((a, b) => a.timestamp - b.timestamp)
         : []
+    const otherReplayTabs = lookbackTabIds
+      .filter(
+        (tabId) =>
+          tabId !== payload.captureTabId &&
+          instantReplayEvents.some((event) => event.tabId === tabId)
+      )
+      .map((tabId) => ({
+        tabId,
+        ...describeTab({ url: tabUrls.get(tabId) }),
+        joinedAt: startedAt,
+      }))
     const captureTab = await chrome.tabs
       .get(payload.captureTabId)
       .catch(() => null)
@@ -590,6 +614,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       lastSwitchTabId: payload.captureTabId,
       tabs: [
         { tabId: payload.captureTabId, ...captureTabInfo, joinedAt: startedAt },
+        ...otherReplayTabs,
       ],
       events: instantReplayEvents,
     }
@@ -819,7 +844,9 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     const session = sessionsById.get(sessionId)
     removeSession(sessionId)
-    if (session) {
+    // A screenshot used up the tab's recent events. An instant replay must
+    // not: the next replay of the tab covers the same minutes.
+    if (session?.captureType === "screenshot") {
       recentEventsByTab.delete(session.captureTabId)
     }
     schedulePersist()

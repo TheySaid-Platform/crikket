@@ -66,9 +66,23 @@ export type OffscreenRequest =
   | { type: "pause" }
   | { type: "resume" }
   | { type: "toggle-mic" }
+  // Instant replay's video: keep the last minutes of a tab or the screen.
+  | { type: "replay-video-start"; source: "tab"; streamId: string }
+  | { type: "replay-video-start"; source: "display" }
+  | { type: "replay-video-stop" }
+  // Cuts a clip of the last minutes and holds it, with its times...
+  | { type: "replay-video-save" }
+  // ...then stores it for the review of this debugger session.
+  | { type: "replay-video-store"; debuggerSessionId: string }
 
 export type OffscreenResponse =
-  | { ok: true; startedAt?: number; micState?: MicState; at?: number }
+  | {
+      ok: true
+      startedAt?: number
+      micState?: MicState
+      // When the action happened; for a saved replay clip, its last frame.
+      at?: number
+    }
   // errorName is the DOMException name, so callers can tell a cancelled
   // screen picker (NotAllowedError) from Chrome refusing to show it.
   | { ok: false; error: string; errorName?: string }

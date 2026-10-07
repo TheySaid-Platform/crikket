@@ -1,10 +1,12 @@
 import { AlertCircle } from "lucide-react"
+import { InstantReplayPanel } from "@/components/instant-replay-panel"
 import { PopupCaptureActions } from "@/components/popup-capture-actions"
 import { PopupFooter, PopupHeader } from "@/components/popup-header"
 import { useBackgroundRecordingStatus } from "@/hooks/use-background-recording-status"
 import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { useFullPageProgress } from "@/hooks/use-full-page-progress"
 import { useHotkeyTrigger } from "@/hooks/use-hotkey-trigger"
+import { useInstantReplay } from "@/hooks/use-instant-replay"
 import { usePopupCapture } from "@/hooks/use-popup-capture"
 import { usePopupMicToggle } from "@/hooks/use-popup-mic-toggle"
 import { usePopupRecordingStatus } from "@/hooks/use-popup-recording-status"
@@ -41,6 +43,7 @@ function App() {
   } = usePopupRecordingStatus()
   const { micState, toggleMic } = usePopupMicToggle()
   const fullPageProgress = useFullPageProgress()
+  const instantReplay = useInstantReplay()
   // "Record This Tab" records in the background, without a recorder tab.
   const { backgroundRecording, backgroundRecordedMs } =
     useBackgroundRecordingStatus()
@@ -87,8 +90,15 @@ function App() {
 
       <PopupCaptureActions
         fullPageProgress={fullPageProgress}
-        isBusy={isBusy}
         hasFloatingBar={backgroundRecording !== null}
+        instantReplayPanel={
+          <InstantReplayPanel
+            disabled={isBusy}
+            replay={instantReplay}
+            shortcut={shortcuts.saveInstantReplay}
+          />
+        }
+        isBusy={isBusy}
         isRecordingInProgress={isRecording}
         isRecordingPaused={isPaused}
         micState={backgroundRecording?.micState ?? micState}

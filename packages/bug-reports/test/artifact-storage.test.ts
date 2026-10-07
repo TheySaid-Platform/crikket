@@ -22,6 +22,14 @@ describe("artifact storage key builders", () => {
         captureType: "screenshot",
       })
     ).toBe("organizations/org_123/bug-reports/br_123/capture/screenshot.png")
+
+    expect(
+      buildCaptureArtifactKey({
+        organizationId: "org_123",
+        bugReportId: "br_123",
+        captureType: "replay",
+      })
+    ).toBe("organizations/org_123/bug-reports/br_123/capture/replay.json.gz")
   })
 
   it("builds thumbnail keys under the capture folder", () => {

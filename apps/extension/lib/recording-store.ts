@@ -3,6 +3,7 @@ import type {
   RecordingPause,
 } from "@crikket/capture-core/debugger/types"
 import type { FullPageEnding } from "@/lib/full-page-screenshot"
+import type { ReplayEvent } from "@/lib/instant-replay/protocol"
 
 // Hands a finished recording from the offscreen recorder to the review page.
 // Both run on the extension's origin, so they share this IndexedDB database;
@@ -106,6 +107,34 @@ export async function loadScreenshot(
     image: entry.image,
     fullPage: (entry.fullPage as FullPageDetails | null | undefined) ?? null,
   }
+}
+
+export interface StoredReplay {
+  events: ReplayEvent[]
+  // The first event, and when the replay was saved (its last event).
+  startedAt: number
+  stoppedAt: number
+}
+
+/** Instant replays share the store too: only the newest capture is kept. */
+export async function saveReplay(
+  sessionId: string,
+  replay: StoredReplay
+): Promise<void> {
+  await runTransaction("readwrite", (store) => {
+    store.clear()
+    return store.put({ replay }, sessionId)
+  })
+}
+
+export async function loadReplay(
+  sessionId: string
+): Promise<StoredReplay | null> {
+  const entry = await runTransaction<{ replay?: StoredReplay }>(
+    "readonly",
+    (store) => store.get(sessionId)
+  )
+  return entry?.replay ?? null
 }
 
 const logsBackupKey = (sessionId: string) => `${sessionId}:logs`

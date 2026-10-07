@@ -10,6 +10,7 @@ import {
   type VideoSample,
   WebMOutputFormat,
 } from "mediabunny"
+import type { CaptureType } from "@/hooks/use-recorder-init"
 import { type Annotation, drawAnnotation } from "@/lib/annotations"
 import { pixelateRegion } from "@/lib/pixelate"
 
@@ -90,7 +91,7 @@ export function alignDebuggerPayload(
 }
 
 export function getSubmissionDurationMs(input: {
-  captureType: "video" | "screenshot"
+  captureType: CaptureType
   videoEdits: VideoEdits | null
   recordedDurationMs: number | null
   startTime: number | null

@@ -95,6 +95,39 @@ export const requestDisplayCaptureStream = async (): Promise<MediaStream> => {
   return mixWithMicrophone(displayStream, { playBackSourceAudio: false })
 }
 
+// Instant replay's video: picture only, so the tab keeps its sound and nothing
+// asks for the microphone. 15 fps halves the cost of encoding all the time.
+const REPLAY_VIDEO_MAX_FRAME_RATE = 15
+
+export const openTabVideoStream = (streamId: string): Promise<MediaStream> =>
+  navigator.mediaDevices.getUserMedia({
+    video: {
+      mandatory: {
+        chromeMediaSource: "tab",
+        chromeMediaSourceId: streamId,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        maxFrameRate: REPLAY_VIDEO_MAX_FRAME_RATE,
+      },
+    } as TabCaptureConstraints,
+  })
+
+export const requestDisplayVideoStream = (): Promise<MediaStream> => {
+  const options: ChromeDisplayMediaStreamOptions = {
+    video: {
+      displaySurface: "monitor",
+      width: { max: 1920 },
+      height: { max: 1080 },
+      frameRate: { max: REPLAY_VIDEO_MAX_FRAME_RATE },
+    },
+    audio: false,
+    selfBrowserSurface: "exclude",
+    surfaceSwitching: "include",
+    monitorTypeSurfaces: "include",
+  }
+  return navigator.mediaDevices.getDisplayMedia(options)
+}
+
 export const stopCaptureStream = (stream: MediaStream): void => {
   for (const track of stream.getTracks()) {
     track.stop()
