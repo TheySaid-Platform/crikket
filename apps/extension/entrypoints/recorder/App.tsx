@@ -17,28 +17,29 @@ import type {
 import { env } from "@crikket/env/extension"
 import type { Priority } from "@crikket/shared/constants/priorities"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@crikket/ui/components/ui/card"
 import { AlertCircle } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { AllowMicrophoneStep } from "@/components/allow-microphone-step"
+import { CapturePreview } from "@/components/capture-preview"
 import { ChooseDisplayStep } from "@/components/choose-display-step"
+import { CloseReviewButton } from "@/components/close-review-button"
+import { EditStep } from "@/components/edit-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
+import { ReviewShell } from "@/components/review-shell"
 import { SuccessStep } from "@/components/success-step"
 import { useCaptureContext } from "@/hooks/use-capture-context"
+import { useCaptureEdits } from "@/hooks/use-capture-edits"
 import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { type CaptureType, useRecorderInit } from "@/hooks/use-recorder-init"
+import { useRecorderMicSync } from "@/hooks/use-recorder-mic-sync"
 import { useRecorderRecordingSync } from "@/hooks/use-recorder-recording-sync"
+import { useReviewRecording } from "@/hooks/use-review-recording"
 import { useScreenCapture } from "@/hooks/use-screen-capture"
 import { useTimer } from "@/hooks/use-timer"
+import { closeRecorderWindow } from "@/lib/background-recording/client"
 import {
   discardDebuggerSession,
-  getDebuggerSessionSnapshot,
   markDebuggerRecordingStarted,
   markDebuggerRecordingStopped,
   setDebuggerRecordingPaused,
@@ -48,6 +49,8 @@ import {
   type CaptureContext,
   readVideoSourceFromSearch,
 } from "@/lib/capture-context"
+import { loadDebuggerSnapshot } from "@/lib/load-debugger-snapshot"
+import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
 import {
   buildCaptureContextSubmissionData,
   type DebuggerCaptureSummary,
@@ -59,9 +62,33 @@ import {
   isUnauthorizedSubmissionError,
   normalizeOptionalText,
 } from "@/lib/recorder-submit"
+import type { FullPageDetails, StoredRecording } from "@/lib/recording-store"
 import { formatDuration, getDeviceInfo } from "@/lib/utils"
+import { alignDebuggerPayload, getSubmissionDurationMs } from "@/lib/video-edit"
 
-type State = "idle" | "recording" | "stopped" | "submitting" | "success"
+type State =
+  | "idle"
+  | "recording"
+  | "stopped"
+  | "editing"
+  | "submitting"
+  | "success"
+
+// The form stays mounted while editing so the typed title and description survive.
+const FORM_STATES: ReadonlySet<State> = new Set([
+  "stopped",
+  "submitting",
+  "editing",
+])
+
+// What the user captured, in messages about it.
+const CAPTURE_NOUNS: Record<CaptureType, string> = {
+  video: "recording",
+  screenshot: "screenshot",
+}
+
+// Editing happens after recording stopped, so other hooks treat it as "stopped".
+const toSyncState = (state: State) => (state === "editing" ? "stopped" : state)
 
 interface DebuggerSubmissionInput {
   sessionId: string | null
@@ -103,8 +130,26 @@ function App() {
   const [submissionWarnings, setSubmissionWarnings] = useState<string[]>([])
   const [preSubmitWarnings, setPreSubmitWarnings] = useState<string[]>([])
   const [debuggerTitle, setDebuggerTitle] = useState<string | null>(null)
+  const [isWaitingForStartClick, setIsWaitingForStartClick] = useState(false)
+  // How a full-page screenshot went (screens, whether it is complete).
+  const [fullPageDetails, setFullPageDetails] =
+    useState<FullPageDetails | null>(null)
+  // Pauses in a background recording; the video leaves them out.
+  const [recordingPauses, setRecordingPauses] = useState<RecordingPause[]>([])
   const [debuggerSummary, setDebuggerSummary] =
     useState<DebuggerCaptureSummary>(EMPTY_DEBUGGER_SUMMARY)
+  const {
+    editedScreenshot,
+    videoEdits,
+    videoTrim,
+    videoOverlays,
+    screenshotEdits,
+    setVideoTrim,
+    setVideoOverlays,
+    applyScreenshotEdits,
+    resetEdits,
+    prepareAttachment,
+  } = useCaptureEdits()
   const debuggerSessionId = useMemo(
     () => readDebuggerSessionIdFromSearch(window.location.search),
     []
@@ -146,9 +191,14 @@ function App() {
     recordedBlob,
     screenshotBlob,
     error: captureError,
+    micState,
     reset: resetCapture,
+    setRecordedBlob,
     setScreenshotBlob,
+    toggleMic,
   } = useScreenCapture()
+  const { isReview, forgetRecording, cancelReview } =
+    useReviewRecording(debuggerSessionId)
 
   const runningDuration = useTimer(
     startTime,
@@ -187,15 +237,7 @@ function App() {
       } satisfies DebuggerSubmissionInput
     }
 
-    const rawSnapshot = await getDebuggerSessionSnapshot(sessionId).catch(
-      (error: unknown) => {
-        reportNonFatalError(
-          `Failed to load debugger snapshot for session ${sessionId}`,
-          error
-        )
-        return null
-      }
-    )
+    const rawSnapshot = await loadDebuggerSnapshot(sessionId)
 
     if (!rawSnapshot) {
       warnings.push(
@@ -212,14 +254,18 @@ function App() {
       } satisfies DebuggerSubmissionInput
     }
 
-    const pauses = pausesRef.current
+    // Pauses made on this recorder page, or in a background recording.
+    const pauses = [...pausesRef.current, ...recordingPauses]
     const snapshot = {
       ...rawSnapshot,
       events: rawSnapshot.events.filter(
         (event) => !isDuringPause(event.timestamp, pauses)
       ),
     }
-    const payload = buildDebuggerSubmissionPayload(snapshot, pauses)
+    const payload = alignDebuggerPayload(
+      buildDebuggerSubmissionPayload(snapshot, pauses),
+      videoEdits
+    )
     const summary = getDebuggerCaptureSummary(payload)
     const hasPayloadData = hasDebuggerPayloadData(payload)
 
@@ -229,7 +275,7 @@ function App() {
       )
     } else if (summary.networkRequests === 0) {
       warnings.push(
-        "No network requests were captured in this recording. API-level debugging data may be incomplete."
+        `No network requests were captured with this ${CAPTURE_NOUNS[captureType]}. API-level debugging data may be incomplete.`
       )
     }
 
@@ -242,7 +288,7 @@ function App() {
       firstPage: findFirstReportPage(snapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
-  }, [debuggerSessionId])
+  }, [captureType, debuggerSessionId, recordingPauses, videoEdits])
 
   // When the video ended. Sent once, before the report is built, so the
   // background stops following tabs and drops later events.
@@ -325,7 +371,13 @@ function App() {
     onTogglePause: handleTogglePause,
     pausedAt,
     startTime,
-    state,
+    state: toSyncState(state),
+  })
+
+  useRecorderMicSync({
+    isRecording: state === "recording",
+    micState,
+    onToggleMic: toggleMic,
   })
 
   const startVideoCapture = useCallback(async () => {
@@ -418,14 +470,31 @@ function App() {
     }
   }, [getDebuggerSubmissionInput, markRecordingStopped, state])
 
+  // The first recording waits for a click; see AllowMicrophoneStep.
+  const startRecordingWhenReady = useCallback(async () => {
+    if (await isMicrophonePermissionUndecided()) {
+      setIsWaitingForStartClick(true)
+      return
+    }
+    await handleStartCapture()
+  }, [handleStartCapture])
+
   useRecorderInit({
     onCaptureTypeChange: setCaptureType,
-    onScreenshotLoaded: (blob) => {
+    onRecordingLoaded: (recording: StoredRecording) => {
+      setRecordedBlob(recording.blob)
+      setRecordedDurationMs(recording.durationMs)
+      setRecordingPauses(recording.pauses)
+      recordingStoppedAtRef.current = recording.stoppedAt
+      setState("stopped")
+    },
+    onScreenshotLoaded: (blob, fullPage) => {
       setScreenshotBlob(blob)
+      setFullPageDetails(fullPage)
       setRecordedDurationMs(null)
       setState("stopped")
     },
-    onStartRecording: handleStartCapture,
+    onStartRecording: startRecordingWhenReady,
     onError: (err) => setSubmitError(err),
   })
 
@@ -442,17 +511,25 @@ function App() {
     updateStartTime(null)
     updatePausedAt(null)
     pausesRef.current = []
+    resetEdits()
+    cancelReview()
     clearDebuggerState().catch((error: unknown) => {
       reportNonFatalError("Failed to clear debugger state after reset", error)
     })
   }
+
+  const originalBlob = captureType === "video" ? recordedBlob : screenshotBlob
+  // Video edits are applied on submit, so a video previews as recorded.
+  const activeBlob = editedScreenshot ?? originalBlob
+  const originalDurationMs =
+    recordedDurationMs ?? (duration > 0 ? duration : null)
 
   const handleSubmit = async (values: {
     title: string
     description: string
     priority: Priority
   }) => {
-    const blob = captureType === "video" ? recordedBlob : screenshotBlob
+    const blob = activeBlob
     if (!blob || blob.size === 0) {
       setSubmitError("Capture data is missing. Please capture again.")
       setState("stopped")
@@ -464,13 +541,12 @@ function App() {
     setSubmissionWarnings([])
 
     try {
-      const durationMs =
-        captureType === "video"
-          ? Math.max(
-              0,
-              recordedDurationMs ?? (startTime ? Date.now() - startTime : 0)
-            )
-          : 0
+      const durationMs = getSubmissionDurationMs({
+        captureType,
+        videoEdits,
+        recordedDurationMs,
+        startTime,
+      })
       await markRecordingStopped()
       const debuggerSubmission = await getDebuggerSubmissionInput()
       const captureContextSubmissionData = buildCaptureContextSubmissionData(
@@ -481,8 +557,13 @@ function App() {
         ...captureContextSubmissionData.warnings,
       ]
 
+      const attachment = await prepareAttachment(
+        captureType,
+        blob,
+        originalDurationMs ?? 0
+      )
       const result = await submitBugReportWithUploads({
-        attachment: blob,
+        attachment,
         attachmentType: captureType,
         title: normalizeOptionalText(values.title, 200),
         priority: values.priority,
@@ -519,17 +600,17 @@ function App() {
         dedupeMessages([...warnings, ...(result.warnings ?? [])])
       )
       setState("success")
+      forgetRecording()
     } catch (error) {
       if (isUnauthorizedSubmissionError(error)) {
         const loginUrl = new URL("/login", env.VITE_APP_URL).toString()
         window.open(loginUrl, "_blank", "noopener,noreferrer")
       }
-      setSubmitError(getSubmissionErrorMessage(error))
+      setSubmitError(getSubmissionErrorMessage(error, captureType))
       setState("stopped")
     }
   }
 
-  const activeBlob = captureType === "video" ? recordedBlob : screenshotBlob
   const suggestedTitle =
     debuggerTitle ||
     (isWebPageUrl(captureContext.url) ? captureContext.title?.trim() : "") ||
@@ -539,8 +620,14 @@ function App() {
     return URL.createObjectURL(activeBlob)
   }, [activeBlob])
 
+  useEffect(() => {
+    if (!previewUrl) return
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
+
   const error = captureError || submitError
   const isChoosingDisplay = captureType === "video" && videoSource === "display"
+  const idleMode = getIdleMode(isChoosingDisplay, isWaitingForStartClick)
 
   useEffect(() => {
     if (state === "recording") {
@@ -552,72 +639,100 @@ function App() {
   }, [duration, pausedAt, state])
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100/80 p-6 sm:p-8">
-      <Card className="w-full max-w-3xl border-border/80 shadow-lg shadow-slate-950/5">
-        <CardHeader className="gap-2 border-b bg-muted/20 text-left">
-          <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl">
-            Crikket Bug Report
-          </CardTitle>
-          <CardDescription className="text-sm">
-            {getStatusLabel(state, isChoosingDisplay, pausedAt !== null)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6 px-6 py-6">
-          {error ? (
-            <div className="flex items-center gap-2 rounded-md bg-destructive/15 p-4 text-destructive">
-              <AlertCircle className="h-4 w-4" />
-              <span className="font-medium text-sm">{error}</span>
-            </div>
-          ) : null}
+    <ReviewShell
+      closeButton={
+        <CloseReviewButton
+          captureLabel={CAPTURE_NOUNS[captureType]}
+          confirmDiscard={state !== "success"}
+          isVisible={isReview && state !== "idle"}
+          onClose={closeRecorderWindow}
+          onDiscard={handleReset}
+        />
+      }
+      wide={fullPageDetails !== null}
+    >
+      {error ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-destructive">
+          <AlertCircle className="h-4 w-4" />
+          <span className="font-medium text-sm">{error}</span>
+        </div>
+      ) : null}
 
-          {state === "idle" ? (
-            <IdleStep
-              isChoosingDisplay={isChoosingDisplay}
-              onChooseDisplay={handleStartCapture}
-            />
-          ) : null}
+      {state === "idle" ? (
+        <IdleStep mode={idleMode} onStart={handleStartCapture} />
+      ) : null}
 
-          {state === "recording" ? (
-            <RecordingStep
-              duration={duration}
-              isPaused={pausedAt !== null}
-              onStopRecording={handleStopRecording}
-              onTogglePause={handleTogglePause}
-              stopRecordingShortcut={shortcuts.stopRecording}
-              togglePauseShortcut={shortcuts.togglePause}
-            />
-          ) : null}
+      {state === "recording" ? (
+        <RecordingStep
+          duration={duration}
+          isPaused={pausedAt !== null}
+          micState={micState}
+          onStopRecording={handleStopRecording}
+          onToggleMic={toggleMic}
+          onTogglePause={handleTogglePause}
+          stopRecordingShortcut={shortcuts.stopRecording}
+          togglePauseShortcut={shortcuts.togglePause}
+        />
+      ) : null}
 
-          {state === "stopped" || state === "submitting" ? (
-            <FormStep
-              captureType={captureType}
-              debuggerSummary={debuggerSummary}
-              initialTitle={suggestedTitle}
-              isSubmitting={state === "submitting"}
-              onCancel={handleReset}
-              onSubmit={handleSubmit}
-              preSubmitWarnings={preSubmitWarnings}
-              previewUrl={previewUrl}
-              submitError={submitError}
-              videoDurationMs={
-                captureType === "video"
-                  ? (recordedDurationMs ?? (duration > 0 ? duration : null))
-                  : null
-              }
-            />
-          ) : null}
+      {state === "editing" ? (
+        <EditStep
+          captureType={captureType}
+          durationMs={originalDurationMs ?? 0}
+          onCancel={() => setState("stopped")}
+          onScreenshotEditsApplied={(result) => {
+            applyScreenshotEdits(result)
+            setState("stopped")
+          }}
+          onVideoOverlaysApplied={(overlays) => {
+            setVideoOverlays(overlays, originalDurationMs ?? 0)
+            setState("stopped")
+          }}
+          originalBlob={originalBlob}
+          isLongScreenshot={fullPageDetails !== null}
+          screenshotEdits={screenshotEdits}
+          screenshotPixelRatio={fullPageDetails?.scale}
+          trim={videoTrim}
+          videoOverlays={videoOverlays}
+        />
+      ) : null}
 
-          {state === "success" ? (
-            <SuccessStep
-              onClose={() => window.close()}
-              onCopyLink={() => navigator.clipboard.writeText(resultUrl)}
-              onOpenRecording={() => window.open(resultUrl, "_blank")}
-              warnings={submissionWarnings}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
-    </div>
+      {FORM_STATES.has(state) ? (
+        <div hidden={state === "editing"}>
+          <FormStep
+            debuggerSummary={debuggerSummary}
+            initialTitle={suggestedTitle}
+            isSubmitting={state === "submitting"}
+            onCancel={handleReset}
+            onSubmit={handleSubmit}
+            preSubmitWarnings={preSubmitWarnings}
+            preview={
+              <CapturePreview
+                captureType={captureType}
+                disabled={state === "submitting"}
+                durationMs={originalDurationMs}
+                fullPage={fullPageDetails}
+                isScreenshotEdited={editedScreenshot !== null}
+                onEdit={() => setState("editing")}
+                onTrimChange={setVideoTrim}
+                previewUrl={previewUrl}
+                videoEdits={videoEdits}
+              />
+            }
+            submitError={submitError}
+          />
+        </div>
+      ) : null}
+
+      {state === "success" ? (
+        <SuccessStep
+          onClose={closeRecorderWindow}
+          onCopyLink={() => navigator.clipboard.writeText(resultUrl)}
+          onOpenRecording={() => window.open(resultUrl, "_blank")}
+          warnings={submissionWarnings}
+        />
+      ) : null}
+    </ReviewShell>
   )
 }
 
@@ -647,34 +762,31 @@ function getReportPageContext(
   return { url: firstPage.url, title: firstPage.title }
 }
 
-function getStatusLabel(
-  state: State,
+// What the recorder tab shows before recording starts.
+type IdleMode = "choose-display" | "allow-microphone" | "waiting"
+
+function getIdleMode(
   isChoosingDisplay: boolean,
-  isPaused: boolean
-): string {
-  switch (state) {
-    case "idle":
-      return isChoosingDisplay ? "Share your screen" : "Waiting for capture"
-    case "recording":
-      return isPaused ? "Recording paused" : "Recording in progress..."
-    case "stopped":
-      return "Review and submit"
-    case "success":
-      return "Report submitted!"
-    default:
-      return ""
-  }
+  isWaitingForStartClick: boolean
+): IdleMode {
+  if (isChoosingDisplay) return "choose-display"
+  if (isWaitingForStartClick) return "allow-microphone"
+  return "waiting"
 }
 
 function IdleStep({
-  isChoosingDisplay,
-  onChooseDisplay,
+  mode,
+  onStart,
 }: {
-  isChoosingDisplay: boolean
-  onChooseDisplay: () => Promise<void>
+  mode: IdleMode
+  onStart: () => Promise<void>
 }) {
-  if (isChoosingDisplay) {
-    return <ChooseDisplayStep onChoose={onChooseDisplay} />
+  if (mode === "choose-display") {
+    return <ChooseDisplayStep onChoose={onStart} />
+  }
+
+  if (mode === "allow-microphone") {
+    return <AllowMicrophoneStep onStart={onStart} />
   }
 
   return (

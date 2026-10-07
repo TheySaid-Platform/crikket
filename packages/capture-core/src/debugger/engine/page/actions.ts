@@ -1,5 +1,13 @@
 import { getElementTarget } from "./utils"
 
+// The extension's floating bar and review overlay live on the page. Clicks on
+// them are not part of the user's repro steps. Events from inside their shadow
+// roots reach the page retargeted to these host elements.
+const CRIKKET_UI_SELECTOR = "#crikket-recording-bar, #crikket-review-overlay"
+
+const isCrikketUi = (target: EventTarget | null): boolean =>
+  target instanceof Element && target.closest(CRIKKET_UI_SELECTOR) !== null
+
 interface ActionCaptureInput {
   postAction: (
     actionType: string,
@@ -54,9 +62,10 @@ export function installActionAndNavigationCapture(
 
   const delegatedListener = (event: Event) => {
     if (
-      event.type !== "click" &&
-      event.type !== "input" &&
-      event.type !== "change"
+      (event.type !== "click" &&
+        event.type !== "input" &&
+        event.type !== "change") ||
+      isCrikketUi(event.target)
     ) {
       return
     }

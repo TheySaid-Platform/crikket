@@ -22,6 +22,8 @@ export const RECORDING_STARTED_AT_STORAGE_KEY = "recordingStartedAt"
 // When the current pause began; null while recording.
 export const RECORDING_PAUSED_AT_STORAGE_KEY = "recordingPausedAt"
 export const TOGGLE_RECORDING_PAUSE_MESSAGE = "TOGGLE_RECORDING_PAUSE"
+export const RECORDING_MIC_STATE_STORAGE_KEY = "recordingMicState"
+export const TOGGLE_MIC_MESSAGE_TYPE = "TOGGLE_MIC_FROM_POPUP"
 export const HOTKEY_START_VIDEO_CAPTURE_STORAGE_KEY = "hotkeyStartVideoCapture"
 export const HOTKEY_START_SCREENSHOT_CAPTURE_STORAGE_KEY =
   "hotkeyStartScreenshotCapture"

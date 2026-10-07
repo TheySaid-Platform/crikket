@@ -31,6 +31,10 @@ const TAB_SWITCH_ACTION_TYPE = "tab-switch"
 // except right after it starts (the countdown), so an orphaned session never
 // keeps absorbing tabs.
 const UNATTACHED_SESSION_JOIN_WINDOW_MS = 60_000
+// Kept in chrome.storage.session, which survives a worker restart but not a
+// browser restart or an extension reload. Finding it on load means the tab ids
+// in stored sessions still point at the same tabs.
+const BROWSER_SESSION_MARKER_KEY = "crikketDebuggerBrowserSession"
 
 // Stamped on every event, so keep it short and drop query strings and hashes,
 // which can hold tokens (e.g. OAuth callbacks).
@@ -90,7 +94,7 @@ interface PageEventSource {
   tabUrl?: string
 }
 
-interface DebuggerSessionStore {
+export interface DebuggerSessionStore {
   injectDebuggerScriptForTab: (tabId: number) => Promise<void>
   startSession: (payload: StartSessionPayload) => Promise<{
     sessionId: string
@@ -114,6 +118,7 @@ interface DebuggerSessionStore {
     payload: SetRecordingPausedPayload
   ) => Promise<void>
   discardSession: (sessionId: string) => Promise<void>
+  markSessionBackgroundRecorder: (sessionId: string) => Promise<void>
   ensureDebuggerScriptForTab: (tabId: number, url?: string) => Promise<void>
   handleTabActivated: (tab: chrome.tabs.Tab) => Promise<void>
   handleTabCreated: (tab: chrome.tabs.Tab) => Promise<void>
@@ -210,10 +215,40 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
   }
 
+  // True when only the worker restarted, so stored tab ids are still valid.
+  // False after a browser restart or an extension reload.
+  const isSameBrowserSession = async (): Promise<boolean> => {
+    try {
+      const result = await chrome.storage.session.get(
+        BROWSER_SESSION_MARKER_KEY
+      )
+      await chrome.storage.session.set({ [BROWSER_SESSION_MARKER_KEY]: true })
+      return result[BROWSER_SESSION_MARKER_KEY] === true
+    } catch {
+      return false
+    }
+  }
+
+  // A session recorded without a recorder tab (floating bar, review over the
+  // page) has no recorder page to look for. Chrome restarts the worker on its
+  // own, often mid-recording, and the session must survive that until its
+  // report is sent. Only a browser restart or a reload ends it.
+  const shouldRestoreSession = (
+    session: StoredDebuggerSession,
+    urlsByTabId: Map<number, string> | null,
+    sameBrowserSession: boolean
+  ): boolean => {
+    if (session.backgroundRecorder) {
+      return sameBrowserSession
+    }
+    return !urlsByTabId || isRecorderStillOpen(session, urlsByTabId)
+  }
+
   const hydrateStoredState = async () => {
-    const [result, urlsByTabId] = await Promise.all([
+    const [result, urlsByTabId, sameBrowserSession] = await Promise.all([
       chrome.storage.local.get([DEBUGGER_SESSIONS_STORAGE_KEY]),
       loadOpenTabs(),
+      isSameBrowserSession(),
     ])
 
     const storedSessions = result[DEBUGGER_SESSIONS_STORAGE_KEY]
@@ -229,7 +264,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
         continue
       }
 
-      if (urlsByTabId && !isRecorderStillOpen(session, urlsByTabId)) {
+      if (!shouldRestoreSession(session, urlsByTabId, sameBrowserSession)) {
         droppedStaleSession = true
         continue
       }
@@ -363,6 +398,16 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     session.recordingStartedAt !== null &&
     session.recordingStoppedAt === null
 
+  // A background recording goes on without its tabs: a full screen recording
+  // follows the user, and the recorded tab can close mid-recording. Until it
+  // stops, its session must stay.
+  const isBackgroundRecordingRunning = (
+    session: StoredDebuggerSession
+  ): boolean =>
+    session.backgroundRecorder &&
+    session.captureType === "video" &&
+    session.recordingStoppedAt === null
+
   // The newest session that follows the user into other tabs, while it is
   // recording. Record This Tab sessions never take in other tabs.
   const getJoinableSession = (): StoredDebuggerSession | null => {
@@ -377,7 +422,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     if (
       !newest?.followTabs ||
-      newest.recorderTabId === null ||
+      (newest.recorderTabId === null && !newest.backgroundRecorder) ||
       !isRecording(newest)
     ) {
       return null
@@ -540,6 +585,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       followTabs:
         payload.captureType === "video" && payload.followTabs === true,
       recorderTabId: null,
+      backgroundRecorder: false,
       activeTabId: payload.captureTabId,
       lastSwitchTabId: payload.captureTabId,
       tabs: [
@@ -754,6 +800,20 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
   }
 
+  // Called when the session is recorded without a recorder tab. Saved at once,
+  // since a worker restart right after must not lose it.
+  const markSessionBackgroundRecorder = async (sessionId: string) => {
+    await ensureLoaded()
+
+    const session = sessionsById.get(sessionId)
+    if (!session || session.backgroundRecorder) {
+      return
+    }
+
+    session.backgroundRecorder = true
+    await persistState()
+  }
+
   const discardSession = async (sessionId: string) => {
     await ensureLoaded()
 
@@ -880,8 +940,14 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       const hasOpenTabs = Array.from(tabToSession.values()).includes(
         session.sessionId
       )
-      // Without a recorder page, nothing is left to submit the session.
-      if (!hasOpenTabs && session.recorderTabId === null) {
+      // Without a recorder page, nothing is left to submit the session. A
+      // stopped background capture is reviewed over its page, which is now
+      // closed; a review in its own tab reads the logs saved at stop.
+      if (
+        !hasOpenTabs &&
+        session.recorderTabId === null &&
+        !isBackgroundRecordingRunning(session)
+      ) {
         removeSession(session.sessionId)
       }
     }
@@ -898,6 +964,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     markSessionRecordingStopped,
     setSessionRecordingPaused,
     discardSession,
+    markSessionBackgroundRecorder,
     ensureDebuggerScriptForTab,
     handleTabActivated,
     handleTabCreated,

@@ -1,6 +1,7 @@
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { useEffect } from "react"
 import type { CaptureType } from "@/hooks/use-recorder-init"
+import { BACKGROUND_RECORDING_STORAGE_KEY } from "@/lib/background-recording/protocol"
 import {
   RECORDER_TAB_ID_STORAGE_KEY,
   RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY,
@@ -18,6 +19,16 @@ interface UseRecorderRecordingSyncProps {
   pausedAt: number | null
   onStopFromPopup: () => Promise<void>
   onTogglePause: () => void
+}
+
+// A background recording (with the floating bar) shows the same badge. A
+// recorder page, such as an old review closing, must not clear it then.
+async function clearRecordingBadge(): Promise<void> {
+  const stored = await chrome.storage.local.get(
+    BACKGROUND_RECORDING_STORAGE_KEY
+  )
+  if (stored[BACKGROUND_RECORDING_STORAGE_KEY]) return
+  await setRecordingBadge(null)
 }
 
 export function useRecorderRecordingSync({
@@ -60,7 +71,7 @@ export function useRecorderRecordingSync({
         RECORDING_STARTED_AT_STORAGE_KEY,
         RECORDING_PAUSED_AT_STORAGE_KEY,
       ])
-      await setRecordingBadge(null)
+      await clearRecordingBadge()
     }
 
     const syncRecordingState = async () => {
@@ -149,7 +160,9 @@ export function useRecorderRecordingSync({
         RECORDING_STARTED_AT_STORAGE_KEY,
         RECORDING_PAUSED_AT_STORAGE_KEY,
       ])
-      setRecordingBadge(null)
+      clearRecordingBadge().catch((error: unknown) => {
+        reportNonFatalError("Failed to clear the recording badge", error)
+      })
     }
   }, [])
 }

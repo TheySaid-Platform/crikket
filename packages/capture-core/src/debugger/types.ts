@@ -255,6 +255,10 @@ export interface StoredDebuggerSession {
   // The extension page that records this session. Closing it discards the
   // session, since nothing can submit it anymore.
   recorderTabId: number | null
+  // Recorded without a recorder page: by the offscreen recorder with the
+  // floating bar, or a screenshot reviewed over the page. Such a session
+  // survives worker restarts, and keeps going without its tabs while it records.
+  backgroundRecorder: boolean
   // The tab the user is on, and the tab the last tab-switch event pointed at.
   // They differ while a just-opened tab has no URL yet. Stored so a worker
   // restart does not lose them.

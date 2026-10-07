@@ -66,6 +66,7 @@ export function normalizeStoredSession(
     recordingPausedAt: recordingPausedAt ?? null,
     followTabs: value.followTabs === true,
     recorderTabId: recorderTabId ?? null,
+    backgroundRecorder: value.backgroundRecorder === true,
     activeTabId: activeTabId ?? null,
     lastSwitchTabId: lastSwitchTabId ?? null,
     tabs,

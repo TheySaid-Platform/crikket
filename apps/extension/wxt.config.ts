@@ -44,6 +44,8 @@ export default defineConfig({
     },
     permissions: [
       "activeTab",
+      // Records "Record This Tab" without a visible tab. No install warning.
+      "offscreen",
       "scripting",
       "storage",
       "tabCapture",
@@ -51,5 +53,9 @@ export default defineConfig({
       "webRequest",
     ],
     host_permissions: ["<all_urls>"],
+    // The review opens in an iframe over the recorded page, like Jam.
+    web_accessible_resources: [
+      { resources: ["recorder.html"], matches: ["<all_urls>"] },
+    ],
   },
 })
