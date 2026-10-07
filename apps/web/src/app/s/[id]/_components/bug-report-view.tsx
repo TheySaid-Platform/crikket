@@ -20,7 +20,7 @@ import {
   parseAsStringLiteral,
   useQueryState,
 } from "nuqs"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { EditBugReportSheet } from "@/components/bug-reports/edit-bug-report-sheet"
 import { client, orpc } from "@/utils/orpc"
@@ -381,6 +381,20 @@ export function BugReportView({ id }: BugReportViewProps) {
       enabled: Boolean(id),
     })
   )
+
+  // Once per report per page load, after it loads. The ref keeps React
+  // StrictMode and refetches from recording it twice.
+  const recordedViewIdRef = useRef<string | null>(null)
+  const isReportLoaded = Boolean(data)
+  useEffect(() => {
+    if (!isReportLoaded || recordedViewIdRef.current === id) {
+      return
+    }
+    recordedViewIdRef.current = id
+    client.bugReport.recordView({ id }).catch((viewError: unknown) => {
+      reportNonFatalError("Failed to record bug report view", viewError)
+    })
+  }, [id, isReportLoaded])
 
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
