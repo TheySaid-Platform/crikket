@@ -18,6 +18,7 @@ import {
   fontSizeFor,
   type Point,
 } from "@/lib/annotations"
+import { getDrawingTiming } from "@/lib/drawing-timing"
 import type { PixelRect } from "@/lib/pixelate"
 import { primeVideoDuration } from "@/lib/video-duration"
 import type { BlurRegion } from "@/lib/video-edit"
@@ -31,7 +32,6 @@ const VIDEO_TOOLS: AnnotationTool[] = [
   "text",
   "blur",
 ]
-const DEFAULT_SHOW_FOR_MS = 3000
 // Smallest shape worth keeping, as a share of the frame width.
 const MIN_SHAPE_FRACTION = 0.005
 
@@ -59,11 +59,8 @@ interface VideoEditorProps {
   onCancel: () => void
 }
 
-/**
- * Draw on the recording, Lightshot-style. Each drawing shows for a few
- * seconds from the moment it was drawn; blur hides an area for the whole
- * clip. Everything is burned into the video when the report is submitted.
- */
+// Drawings show for a few seconds and blur covers the whole clip; both are
+// burned into the video on submit.
 export function VideoEditor({
   sourceBlob,
   durationMs,
@@ -139,7 +136,7 @@ export function VideoEditor({
       }))
       return
     }
-    const startMs = Math.round(currentMs)
+    const timing = getDrawingTiming(currentMs, range)
     overlays.update((current) => ({
       ...current,
       drawings: [
@@ -148,8 +145,7 @@ export function VideoEditor({
           id: crypto.randomUUID(),
           annotation,
           space: frame,
-          startMs,
-          endMs: Math.min(durationMs, startMs + DEFAULT_SHOW_FOR_MS),
+          ...timing,
         },
       ],
     }))

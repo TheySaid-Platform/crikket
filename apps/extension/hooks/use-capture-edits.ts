@@ -15,12 +15,8 @@ export interface VideoOverlays {
   drawings: VideoDrawing[]
 }
 
-/**
- * Holds the edits to a capture. A screenshot is redrawn as soon as it is
- * edited. Video edits stay settings (trim, blur areas, drawings) while the
- * user reviews, like Jam, and are applied to the original recording once,
- * when the report is submitted.
- */
+// A screenshot is redrawn on each edit. Video edits stay settings until
+// submit, then are applied once to the original recording.
 export function useCaptureEdits() {
   const [editedScreenshot, setEditedScreenshot] = useState<Blob | null>(null)
   const [videoEdits, setVideoEdits] = useState<VideoEdits | null>(null)
@@ -76,8 +72,6 @@ export function useCaptureEdits() {
     setScreenshotEdits(null)
   }, [])
 
-  // The file to upload: the recording with its edits applied, or the
-  // (possibly edited) screenshot.
   const prepareAttachment = useCallback(
     (captureType: CaptureType, capture: Blob, durationMs: number) => {
       if (

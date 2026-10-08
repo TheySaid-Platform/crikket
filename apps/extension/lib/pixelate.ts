@@ -13,11 +13,8 @@ const MIN_BLOCK_SIZE_PX = 8
 
 let scratchCanvas: OffscreenCanvas | null = null
 
-/**
- * Hides a region by replacing it with large mosaic blocks. Pixelation is used
- * instead of a CSS-style blur because a blur can sometimes be partially
- * reversed, while averaged blocks cannot.
- */
+// Pixelation, not blur: a blur can sometimes be partly reversed, averaged
+// blocks cannot.
 export function pixelateRegion(ctx: Context2D, rect: PixelRect): void {
   const canvas = ctx.canvas
   const x = Math.max(0, Math.floor(rect.x))

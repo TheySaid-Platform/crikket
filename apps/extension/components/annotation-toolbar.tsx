@@ -51,10 +51,7 @@ interface AnnotationToolbarProps {
   children?: ReactNode
 }
 
-/**
- * A Lightshot-style toolbar: drawing tools, colors, undo and redo. Each tool
- * also has a one-letter shortcut, shown in its tooltip.
- */
+/** Drawing tools, colors, undo and redo; each tool has a letter shortcut. */
 export function AnnotationToolbar({
   tools,
   tool,

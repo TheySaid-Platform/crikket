@@ -124,8 +124,7 @@ export function PopupCaptureActions({
     return <CountdownPanel seconds={recordingCountdown} />
   }
 
-  // Only the progress while the page is being captured, like the timer
-  // while recording; also in a popup opened again mid-capture.
+  // Like the timer while recording, also in a popup opened mid-capture.
   if (fullPageProgress || (pendingCaptureType === "fullpage" && isBusy)) {
     return (
       <FullPageProgressPanel
@@ -229,8 +228,6 @@ function PendingCapturePanel({
   )
 }
 
-// The page scrolls by itself while a full-page screenshot is taken; this says
-// what is going on and how much of the page is done.
 function FullPageProgressPanel({
   progress,
   onStop,

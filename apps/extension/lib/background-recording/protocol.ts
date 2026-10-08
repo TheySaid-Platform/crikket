@@ -1,15 +1,25 @@
 import type { MicState } from "@/hooks/use-screen-capture"
 import type { VideoSource } from "@/lib/capture-context"
 
-// Both "Record This Tab" and "Record Full Screen" record in an offscreen
-// document, so no extension tab opens while recording (like Jam). The
-// background worker owns the recording state; the popup and the floating bar
-// on the page read it from storage and send it commands.
+// The background worker owns the recording state; the popup and the floating
+// bar read it from storage and send it commands.
 
 export const BACKGROUND_RECORDING_STORAGE_KEY = "backgroundRecording"
-// While a full-page screenshot is being taken: its FullPageProgress, so the
-// popup (even one opened again) can show it and offer to stop.
+// The long screenshot's progress, so a popup opened again can show it.
 export const FULL_PAGE_CAPTURE_STORAGE_KEY = "fullPageCapture"
+// The review that is open but not sent yet, so it can be opened again after
+// its page reloads, and cleaned up when that page closes.
+export const PENDING_REVIEW_STORAGE_KEY = "pendingReview"
+// Why the last recording could not be saved, shown once in the popup.
+export const RECORDING_ERROR_STORAGE_KEY = "recordingError"
+
+export interface PendingReview {
+  // The tab the review is in: over the page, or its own tab.
+  tabId: number
+  url: string
+  debuggerSessionId: string
+  isOverlay: boolean
+}
 
 export interface BackgroundRecordingState {
   source: VideoSource
@@ -39,13 +49,16 @@ export const BACKGROUND_RECORDING_MESSAGE = {
   dismissMutedWarning: "crikket:recording:dismiss-muted-warning",
   // Asks a page whether its floating bar is already running.
   barPing: "crikket:recording-bar:ping",
-  // Takes a screenshot (of the visible area or the whole page) and opens its
-  // review over the page.
+  // A screenshot (visible area or long), reviewed over the page.
   screenshot: "crikket:screenshot:capture",
-  // Stops a full-page screenshot and keeps what was captured so far.
+  // Stops a long screenshot and keeps what was captured so far.
   screenshotStop: "crikket:screenshot:stop",
   openReview: "crikket:review:open",
   closeReview: "crikket:review:close",
+  // From the popup: brings back the review that is not sent yet.
+  reopenReview: "crikket:review:reopen",
+  // From the review: its report was sent or dropped.
+  reviewDone: "crikket:review:done",
 } as const
 
 export const OFFSCREEN_MESSAGE_TARGET = "crikket-offscreen"
@@ -73,9 +86,14 @@ export type OffscreenResponse =
   // screen picker (NotAllowedError) from Chrome refusing to show it.
   | { ok: false; error: string; errorName?: string }
 
+// Chrome would not open the screen picker from the background. Only then does
+// the popup fall back to the recorder tab; any other error is shown.
+export function isPickerUnavailableError(errorName: string | undefined) {
+  return errorName === "NotSupportedError" || errorName === "InvalidStateError"
+}
+
 export const REVIEW_QUERY_PARAM = "review"
-// Set on the review of a long screenshot: its overlay is wider, so the
-// screenshot can show at the size it had on the page.
+// A long screenshot's review: a wider overlay, to show it at its real size.
 export const REVIEW_WIDE_QUERY_PARAM = "wide"
 
 /** Recording time so far, leaving out paused time. */

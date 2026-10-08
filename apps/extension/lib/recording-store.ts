@@ -4,9 +4,8 @@ import type {
 } from "@crikket/capture-core/debugger/types"
 import type { FullPageEnding } from "@/lib/full-page-screenshot"
 
-// Hands a finished recording from the offscreen recorder to the review page.
-// Both run on the extension's origin, so they share this IndexedDB database;
-// recordings are too large for chrome.storage.
+// Too large for chrome.storage. The offscreen recorder and the review share
+// this database because they run on the same origin.
 const DB_NAME = "crikket-recordings"
 const STORE_NAME = "recordings"
 
@@ -71,8 +70,7 @@ export async function loadRecording(
 export interface FullPageDetails {
   screens: number
   ending: FullPageEnding
-  // Image pixels per CSS pixel of the page. Not in screenshots saved by
-  // older versions.
+  // Image pixels per page pixel; missing in screenshots from older versions.
   scale?: number
 }
 
@@ -108,13 +106,11 @@ export async function loadScreenshot(
   }
 }
 
-const logsBackupKey = (sessionId: string) => `${sessionId}:logs`
+const LOGS_SUFFIX = ":logs"
+const logsBackupKey = (sessionId: string) => `${sessionId}${LOGS_SUFFIX}`
 
-/**
- * A copy of the capture's logs (actions, console, network), saved next to it
- * when it is taken, so the review still has them if the background worker
- * loses the live session. Saved after the capture, which clears the store.
- */
+// A copy of the capture's logs, in case the worker loses the live session.
+// Saved after the capture, because saving a capture clears the store.
 export async function saveLogsBackup(
   sessionId: string,
   snapshot: DebuggerSessionSnapshot
@@ -132,6 +128,22 @@ export async function loadLogsBackup(
     (store) => store.get(logsBackupKey(sessionId))
   )
   return snapshot ?? null
+}
+
+/** The debugger session ids that have a capture or a logs copy stored. */
+export async function listStoredCaptureIds(): Promise<string[]> {
+  const keys = await runTransaction<IDBValidKey[]>("readonly", (store) =>
+    store.getAllKeys()
+  )
+  const ids = new Set<string>()
+  for (const key of keys ?? []) {
+    if (typeof key === "string") {
+      ids.add(
+        key.endsWith(LOGS_SUFFIX) ? key.slice(0, -LOGS_SUFFIX.length) : key
+      )
+    }
+  }
+  return [...ids]
 }
 
 /** Removes a stored capture and its logs once its report is sent or dropped. */

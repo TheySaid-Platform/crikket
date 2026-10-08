@@ -10,10 +10,7 @@ interface VideoDrawingsOverlayProps {
   space?: { width: number; height: number } | null
 }
 
-/**
- * Shows the drawings that are visible at timeMs over the video, the same way
- * they will be drawn into the frames when the report is submitted.
- */
+/** Drawn the same way as into the exported frames, so the preview matches. */
 export function VideoDrawingsOverlay({
   drawings,
   timeMs,

@@ -20,8 +20,7 @@ const MODE_HINTS: Record<Exclude<BarMode, "none">, string> = {
 }
 
 // A constructed stylesheet is not subject to the page's Content Security
-// Policy, unlike a <style> element, so strict sites cannot leave the bar
-// unstyled and off screen. Older engines fall back to a <style> element.
+// Policy, unlike a <style> element (the fallback for older engines).
 function applyStyles(shadow: ShadowRoot): void {
   try {
     const sheet = new CSSStyleSheet()

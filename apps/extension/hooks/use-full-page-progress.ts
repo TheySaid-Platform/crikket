@@ -11,10 +11,7 @@ const readProgress = (value: unknown): FullPageProgress | null => {
     : null
 }
 
-/**
- * How far the full-page screenshot being taken has got, or null when none is
- * running. Kept in storage, so a popup opened again mid-capture shows it too.
- */
+// Kept in storage, so a popup opened again mid-capture shows it too.
 export function useFullPageProgress(): FullPageProgress | null {
   const [progress, setProgress] = useState<FullPageProgress | null>(null)
 

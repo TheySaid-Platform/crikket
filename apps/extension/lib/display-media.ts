@@ -42,9 +42,8 @@ export const requestTabCaptureStream = async (
   return openTabCaptureStream(streamId)
 }
 
-// Opens a tab capture from a stream id. Split out so the offscreen recorder,
-// which cannot call chrome.tabCapture itself, can use an id the background
-// worker created.
+// The offscreen recorder cannot call chrome.tabCapture, so the background
+// worker creates the stream id.
 export const openTabCaptureStream = async (
   streamId: string
 ): Promise<MediaStream> => {
@@ -164,11 +163,9 @@ const mixWithMicrophone = async (
   return stream
 }
 
-// Chrome keeps an AudioContext suspended until the page is clicked, unless the
-// page already had microphone permission when it loaded. The recorder tab
-// starts on its own, so on a first recording (or with the mic blocked) the mix
-// would record silence. resume() never settles without permission to play,
-// hence the timeout.
+// Chrome keeps an AudioContext suspended until the page is clicked, unless it
+// already had mic permission, so the mix would record silence. resume() never
+// settles without permission to play, hence the timeout.
 const AUDIO_CONTEXT_START_TIMEOUT_MS = 500
 
 const isRunning = (audioContext: AudioContext): boolean =>
@@ -188,9 +185,8 @@ const startAudioContext = async (
   return isRunning(audioContext)
 }
 
-// Without a running AudioContext the two audio sources can't be mixed, and
-// MediaRecorder keeps only one audio track, so record the narration if there
-// is one and the tab or screen audio otherwise.
+// MediaRecorder keeps one audio track, so without a running AudioContext
+// record the narration if there is one.
 const recordWithoutMixing = (
   sourceStream: MediaStream,
   micStream: MediaStream | null

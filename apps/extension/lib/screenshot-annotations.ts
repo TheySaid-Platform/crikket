@@ -15,10 +15,7 @@ export const EMPTY_SCREENSHOT_EDITS: ScreenshotEdits = {
   crop: null,
 }
 
-/**
- * Draws the screenshot with every annotation on top. In preview mode the crop
- * is shown as a dimmed frame; in export mode nothing extra is drawn.
- */
+/** In preview the crop shows as a dimmed frame; export draws nothing extra. */
 export function renderScreenshot(
   ctx: CanvasRenderingContext2D,
   image: CanvasImageSource & { width: number; height: number },

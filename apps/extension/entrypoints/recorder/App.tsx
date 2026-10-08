@@ -9,6 +9,7 @@ import {
   type ReportPage,
   suggestReportTitle,
 } from "@crikket/capture-core/debugger/report-title"
+import { trimDebuggerSnapshot } from "@crikket/capture-core/debugger/trim"
 import type {
   BugReportDebuggerPayload,
   DebuggerSessionTab,
@@ -279,13 +280,23 @@ function App() {
       )
     }
 
+    // The title and first page come from what the report keeps, so an error
+    // that was trimmed out cannot name it.
+    const reportSnapshot = videoEdits
+      ? trimDebuggerSnapshot(
+          snapshot,
+          { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs },
+          pauses
+        )
+      : snapshot
+
     return {
       sessionId,
       payload: hasPayloadData ? payload : undefined,
       summary,
       tabs: getReportedTabs(snapshot.tabs, snapshot.captureTabId, payload),
-      suggestedTitle: suggestReportTitle(snapshot),
-      firstPage: findFirstReportPage(snapshot),
+      suggestedTitle: suggestReportTitle(reportSnapshot),
+      firstPage: findFirstReportPage(reportSnapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
   }, [captureType, debuggerSessionId, recordingPauses, videoEdits])
@@ -643,9 +654,10 @@ function App() {
       closeButton={
         <CloseReviewButton
           captureLabel={CAPTURE_NOUNS[captureType]}
-          confirmDiscard={state !== "success"}
-          isVisible={isReview && state !== "idle"}
-          onClose={closeRecorderWindow}
+          closeOnEscape={state !== "editing" && state !== "submitting"}
+          confirmDiscard={state !== "success" && state !== "idle"}
+          isVisible={isReview}
+          onClose={state === "success" ? closeRecorderWindow : handleReset}
           onDiscard={handleReset}
         />
       }
@@ -679,6 +691,7 @@ function App() {
         <EditStep
           captureType={captureType}
           durationMs={originalDurationMs ?? 0}
+          isLongScreenshot={fullPageDetails !== null}
           onCancel={() => setState("stopped")}
           onScreenshotEditsApplied={(result) => {
             applyScreenshotEdits(result)
@@ -689,7 +702,6 @@ function App() {
             setState("stopped")
           }}
           originalBlob={originalBlob}
-          isLongScreenshot={fullPageDetails !== null}
           screenshotEdits={screenshotEdits}
           screenshotPixelRatio={fullPageDetails?.scale}
           trim={videoTrim}

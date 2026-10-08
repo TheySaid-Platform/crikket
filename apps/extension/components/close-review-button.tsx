@@ -1,6 +1,6 @@
 import { Button } from "@crikket/ui/components/ui/button"
 import { X } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 interface CloseReviewButtonProps {
   isVisible: boolean
@@ -8,20 +8,39 @@ interface CloseReviewButtonProps {
   captureLabel: string
   // Before the report is sent, closing throws the capture away, so ask.
   confirmDiscard: boolean
+  // Escape works like the button, except in the editors.
+  closeOnEscape: boolean
   onDiscard: () => void
   onClose: () => void
 }
 
-// Jam-style close button for the review. The confirmation is inline because
-// the review can run in an iframe, where Chrome blocks window.confirm().
+// The confirmation is inline because the review can run in an iframe, where
+// Chrome blocks window.confirm().
 export function CloseReviewButton({
   isVisible,
   captureLabel,
   confirmDiscard,
+  closeOnEscape,
   onDiscard,
   onClose,
 }: CloseReviewButtonProps) {
   const [isConfirming, setIsConfirming] = useState(false)
+
+  useEffect(() => {
+    if (!(isVisible && closeOnEscape)) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      if (isConfirming) {
+        setIsConfirming(false)
+      } else if (confirmDiscard) {
+        setIsConfirming(true)
+      } else {
+        onClose()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [closeOnEscape, confirmDiscard, isConfirming, isVisible, onClose])
 
   if (!isVisible) return null
 

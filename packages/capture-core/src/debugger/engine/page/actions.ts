@@ -1,8 +1,7 @@
 import { getElementTarget } from "./utils"
 
-// The extension's floating bar and review overlay live on the page. Clicks on
-// them are not part of the user's repro steps. Events from inside their shadow
-// roots reach the page retargeted to these host elements.
+// Clicks on the extension's bar and review overlay are not repro steps.
+// Events from inside their shadow roots arrive retargeted to these hosts.
 const CRIKKET_UI_SELECTOR = "#crikket-recording-bar, #crikket-review-overlay"
 
 const isCrikketUi = (target: EventTarget | null): boolean =>

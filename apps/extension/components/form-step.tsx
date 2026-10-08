@@ -110,7 +110,6 @@ export function FormStep({
   const fieldError = (meta: { isTouched: boolean; errors: unknown[] }) =>
     meta.isTouched && meta.errors.length > 0
 
-  // Jam-style layout: the capture on the left, the report on the right.
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
       <div className="min-w-0">{preview}</div>

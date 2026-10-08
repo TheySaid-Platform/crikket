@@ -22,11 +22,8 @@ export interface BlurRegion {
   height: number
 }
 
-/**
- * A drawing (arrow, box, text...) shown on part of the video. It is stored in
- * the pixels of the frame it was drawn on (space); frames of another size are
- * scaled to fit.
- */
+// Stored in the pixels of the frame it was drawn on (space); frames of
+// another size are scaled to fit.
 export interface VideoDrawing {
   id: string
   annotation: Annotation
@@ -74,10 +71,7 @@ export function drawVideoDrawings(
   }
 }
 
-/**
- * Drops and re-times debugger events so they line up with the trimmed video.
- * Paused time is already left out when the payload is built.
- */
+/** Paused time is already left out when the payload is built. */
 export function alignDebuggerPayload(
   payload: BugReportDebuggerPayload,
   edits: VideoEdits | null
@@ -112,10 +106,7 @@ function getEditedDurationMs(
   return edits ? edits.trimEndMs - edits.trimStartMs : originalDurationMs
 }
 
-/**
- * Produces a new WebM with the trim, blur and drawings applied. Runs entirely
- * in the browser using WebCodecs, so nothing leaves the machine until submit.
- */
+/** WebCodecs in the browser: nothing leaves the machine until submit. */
 export async function renderEditedVideo(
   source: Blob,
   edits: VideoEdits,

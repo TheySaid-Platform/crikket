@@ -1,6 +1,4 @@
-// Draws on top of the page while recording. The recording captures what is on
-// screen, so the shapes end up in the video. Each shape stays for a moment
-// after the pen lifts and then fades, so the page stays usable.
+// Shapes fade a moment after the pen lifts, so the page stays usable.
 
 import {
   type Annotation,

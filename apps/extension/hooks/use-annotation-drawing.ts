@@ -31,10 +31,7 @@ interface AnnotationDrawingOptions {
   onCrop?: (rect: PixelRect) => void
 }
 
-/**
- * Pointer handling shared by the screenshot and video editors: drag to draw a
- * shape, click to place text, drag to crop.
- */
+/** Pointer handling shared by the screenshot and video editors. */
 export function useAnnotationDrawing({
   tool,
   color,

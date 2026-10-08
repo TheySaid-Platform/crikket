@@ -10,8 +10,7 @@ import type { ReactNode } from "react"
 interface ReviewShellProps {
   // The close (X) button, shown when the review opens over a page.
   closeButton: ReactNode
-  // Uses the width of the window, so a long screenshot can show at the size
-  // it had on the page.
+  // For long screenshots, which show at their real size.
   wide?: boolean
   children: ReactNode
 }

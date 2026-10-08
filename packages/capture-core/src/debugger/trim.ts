@@ -1,53 +1,82 @@
-import type { BugReportDebuggerPayload } from "./types"
+import { getEventOffset } from "./payload"
+import type {
+  BugReportDebuggerPayload,
+  DebuggerSessionSnapshot,
+  RecordingPause,
+} from "./types"
 
 export interface DebuggerTrimRange {
   startMs: number
   endMs: number
 }
 
-// Returns the event's new offset, or null to drop the event.
-type OffsetMapper = (offset: number) => number | null
-
-function remapOffsets(
-  payload: BugReportDebuggerPayload,
-  mapOffset: OffsetMapper
-): BugReportDebuggerPayload {
-  const remap = <T extends { offset: number | null }>(entries: T[]): T[] => {
-    const kept: T[] = []
-    for (const entry of entries) {
-      // Events captured before the recording started have no video position.
-      if (entry.offset === null) {
-        kept.push(entry)
-        continue
-      }
-      const offset = mapOffset(entry.offset)
-      if (offset !== null) {
-        kept.push({ ...entry, offset })
-      }
-    }
-    return kept
-  }
-
-  return {
-    actions: remap(payload.actions),
-    logs: remap(payload.logs),
-    networkRequests: remap(payload.networkRequests),
-  }
+function normalizeRange(range: DebuggerTrimRange): DebuggerTrimRange {
+  const startMs = Math.max(0, Math.floor(range.startMs))
+  return { startMs, endMs: Math.max(startMs, Math.floor(range.endMs)) }
 }
 
-/**
- * Re-aligns debugger events with a trimmed video. Events outside the kept
- * range are dropped and the rest are shifted so offset 0 matches the first
- * frame of the trimmed clip.
- */
+// A request counts while any part of it is in the range: one that started
+// before the cut and failed inside it belongs to the kept part.
+function overlapsRange(
+  offset: number,
+  durationMs: number,
+  range: DebuggerTrimRange
+): boolean {
+  return offset <= range.endMs && offset + durationMs >= range.startMs
+}
+
+function remap<T extends { offset: number | null }>(
+  entries: T[],
+  range: DebuggerTrimRange,
+  getDurationMs: (entry: T) => number
+): T[] {
+  const kept: T[] = []
+  for (const entry of entries) {
+    // Events from before the recording started have no place in the video.
+    if (entry.offset === null) {
+      kept.push(entry)
+    } else if (overlapsRange(entry.offset, getDurationMs(entry), range)) {
+      kept.push({ ...entry, offset: Math.max(0, entry.offset - range.startMs) })
+    }
+  }
+  return kept
+}
+
+const noDuration = () => 0
+
+// Events outside the kept range are dropped; the rest shift so offset 0 is
+// the first frame of the trimmed clip.
 export function trimDebuggerPayload(
   payload: BugReportDebuggerPayload,
   range: DebuggerTrimRange
 ): BugReportDebuggerPayload {
-  const startMs = Math.max(0, Math.floor(range.startMs))
-  const endMs = Math.max(startMs, Math.floor(range.endMs))
+  const kept = normalizeRange(range)
+  return {
+    actions: remap(payload.actions, kept, noDuration),
+    logs: remap(payload.logs, kept, noDuration),
+    networkRequests: remap(payload.networkRequests, kept, (request) =>
+      Math.max(0, request.duration ?? 0)
+    ),
+  }
+}
 
-  return remapOffsets(payload, (offset) =>
-    offset < startMs || offset > endMs ? null : offset - startMs
-  )
+// The snapshot events a trimmed report keeps, for what is worked out from
+// them (the suggested title, the first page).
+export function trimDebuggerSnapshot(
+  snapshot: DebuggerSessionSnapshot,
+  range: DebuggerTrimRange,
+  pauses: readonly RecordingPause[] = []
+): DebuggerSessionSnapshot {
+  const kept = normalizeRange(range)
+  const anchorTimestamp = snapshot.recordingStartedAt ?? snapshot.startedAt
+  return {
+    ...snapshot,
+    events: snapshot.events.filter((event) => {
+      const offset = getEventOffset(event.timestamp, anchorTimestamp, pauses)
+      if (offset === null) return true
+      const durationMs =
+        event.kind === "network" ? Math.max(0, event.duration ?? 0) : 0
+      return overlapsRange(offset, durationMs, kept)
+    }),
+  }
 }

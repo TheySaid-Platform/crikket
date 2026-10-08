@@ -1,6 +1,7 @@
 import { AlertCircle } from "lucide-react"
 import { PopupCaptureActions } from "@/components/popup-capture-actions"
 import { PopupFooter, PopupHeader } from "@/components/popup-header"
+import { UnsentReportCard } from "@/components/unsent-report-card"
 import { useBackgroundRecordingStatus } from "@/hooks/use-background-recording-status"
 import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { useFullPageProgress } from "@/hooks/use-full-page-progress"
@@ -8,6 +9,7 @@ import { useHotkeyTrigger } from "@/hooks/use-hotkey-trigger"
 import { usePopupCapture } from "@/hooks/use-popup-capture"
 import { usePopupMicToggle } from "@/hooks/use-popup-mic-toggle"
 import { usePopupRecordingStatus } from "@/hooks/use-popup-recording-status"
+import { useUnfinishedCapture } from "@/hooks/use-unfinished-capture"
 import {
   stopBackgroundRecording,
   stopFullPageScreenshot,
@@ -40,6 +42,7 @@ function App() {
     togglePauseFromPopup,
   } = usePopupRecordingStatus()
   const { micState, toggleMic } = usePopupMicToggle()
+  const { pendingReview, recordingError, reopenReview } = useUnfinishedCapture()
   const fullPageProgress = useFullPageProgress()
   // "Record This Tab" records in the background, without a recorder tab.
   const { backgroundRecording, backgroundRecordedMs } =
@@ -51,7 +54,8 @@ function App() {
 
   const recordingCountdown =
     localRecordingCountdown ?? syncedRecordingCountdown ?? null
-  const error = stopError ?? captureError
+  const error = stopError ?? captureError ?? recordingError
+  const showUnsentReport = pendingReview !== null && !isRecording
   const isBusy = isCapturing || isStoppingFromPopup
 
   useHotkeyTrigger({
@@ -85,10 +89,12 @@ function App() {
         </div>
       ) : null}
 
+      {showUnsentReport ? <UnsentReportCard onOpen={reopenReview} /> : null}
+
       <PopupCaptureActions
         fullPageProgress={fullPageProgress}
-        isBusy={isBusy}
         hasFloatingBar={backgroundRecording !== null}
+        isBusy={isBusy}
         isRecordingInProgress={isRecording}
         isRecordingPaused={isPaused}
         micState={backgroundRecording?.micState ?? micState}

@@ -12,10 +12,7 @@ interface UseRecorderMicSyncProps {
   onToggleMic: () => void
 }
 
-/**
- * Publishes the recorder's mic state so the popup can show it, and lets the
- * popup mute/unmute without switching to the recorder tab.
- */
+/** Lets the popup show and toggle the recorder tab's microphone. */
 export function useRecorderMicSync({
   isRecording,
   micState,

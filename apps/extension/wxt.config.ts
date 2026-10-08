@@ -53,7 +53,7 @@ export default defineConfig({
       "webRequest",
     ],
     host_permissions: ["<all_urls>"],
-    // The review opens in an iframe over the recorded page, like Jam.
+    // The review opens in an iframe over the recorded page.
     web_accessible_resources: [
       { resources: ["recorder.html"], matches: ["<all_urls>"] },
     ],

@@ -16,14 +16,10 @@ const send = (type: string) => {
   chrome.runtime.sendMessage({ type }).catch(() => undefined)
 }
 
-/**
- * Runs on every page. It stays idle unless this tab is being recorded, then
- * shows the floating bar. It also opens the review over the page after Stop.
- */
+/** Injected into a page that shows the floating bar or the review. */
 export function startRecordingBar(): void {
-  // An older copy may still run on this page: the background injects this
-  // script again when recording starts, and a reloaded extension leaves its
-  // old copy behind. Ask it to step aside, then listen for the next copy.
+  // A reloaded extension leaves its old copy running on the page, with no way
+  // to reach the extension. Ask it to step aside, then listen for the next one.
   document.dispatchEvent(new CustomEvent(REPLACE_EVENT))
   let isActive = true
   let ui: RecordingUi | null = null

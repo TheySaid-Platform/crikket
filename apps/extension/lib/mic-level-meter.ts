@@ -1,10 +1,6 @@
-// Measures how loud the microphone is, for the floating bar's level meter and
-// its "You're muted" warning. It listens to a copy of the mic track, so it
-// keeps hearing the user while the recorded mic is muted.
-//
-// It reads the raw audio frames rather than using Web Audio: Chrome keeps an
-// AudioContext suspended on a page nobody clicked, such as the offscreen
-// recorder, and a suspended context hears only silence (a flat meter).
+// Reads raw audio frames instead of using Web Audio: Chrome keeps an
+// AudioContext suspended on a page nobody clicked (the offscreen recorder),
+// which then hears only silence. A copy of the mic track hears while muted.
 
 const QUIET_DB = -60
 const LOUD_DB = -10
