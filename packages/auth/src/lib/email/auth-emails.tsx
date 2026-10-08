@@ -1,7 +1,15 @@
 /** @jsxImportSource react */
 import { env } from "@crikket/env/server"
 import { sendAuthEmail } from "./send-auth-email"
+import { BugReportViewedTemplate } from "./templates/bug-report-viewed-template"
 import { OrganizationInvitationTemplate } from "./templates/organization-invitation-template"
+
+type SendBugReportViewedEmailInput = {
+  email: string
+  reportId: string
+  reportTitle: string
+  viewerDescription: string
+}
 
 type SendOrganizationInvitationEmailInput = {
   email: string
@@ -45,6 +53,28 @@ export const sendOrganizationInvitationEmail = async ({
         inviterName={inviterName}
         organizationName={organizationName}
         role={role}
+      />
+    ),
+  })
+}
+
+export const sendBugReportViewedEmail = async ({
+  email,
+  reportId,
+  reportTitle,
+  viewerDescription,
+}: SendBugReportViewedEmailInput): Promise<void> => {
+  const reportUrl = toAppUrl(`/s/${reportId}`)
+
+  await sendAuthEmail({
+    to: email,
+    subject: `${viewerDescription} opened your recording "${reportTitle}"`,
+    text: `${viewerDescription} opened your recording "${reportTitle}". Open it: ${reportUrl}`,
+    react: (
+      <BugReportViewedTemplate
+        reportTitle={reportTitle}
+        reportUrl={reportUrl}
+        viewerDescription={viewerDescription}
       />
     ),
   })

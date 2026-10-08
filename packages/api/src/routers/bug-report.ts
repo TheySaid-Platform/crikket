@@ -12,6 +12,7 @@ import {
   getBugReportDashboardStats,
   listBugReports,
 } from "@crikket/bug-reports/procedures/list-bug-reports"
+import { recordBugReportView } from "@crikket/bug-reports/procedures/record-bug-report-view"
 import {
   updateBugReport,
   updateBugReportsBulk,
@@ -33,6 +34,7 @@ export const bugReportRouter = {
   finalizeUpload: finalizeBugReportUploadProcedure,
   retryDebuggerIngestion: retryBugReportDebuggerIngestionProcedure,
   getById: getBugReportById,
+  recordView: recordBugReportView,
   getDebuggerEvents: getBugReportDebuggerEvents,
   getNetworkRequests: getBugReportNetworkRequests,
   getNetworkRequestPayload: getBugReportNetworkRequestPayload,
