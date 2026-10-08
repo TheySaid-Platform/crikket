@@ -60,10 +60,11 @@ export function startReplayRecorder(): void {
       emit: onEvent,
       checkoutEveryNms: INSTANT_REPLAY_CHECKOUT_MS,
       // What people type is never recorded, only how long it is (as in the
-      // action log). Hidden inputs hold tokens; [data-private] lets an app
-      // hide more.
+      // action log). That includes rich text editors, whose text is masked.
+      // Hidden inputs hold tokens; [data-private] lets an app hide more.
       maskAllInputs: true,
-      maskTextSelector: "[data-private]",
+      maskTextSelector:
+        '[data-private], [contenteditable]:not([contenteditable="false"])',
       blockSelector:
         '#crikket-review-overlay, [data-private], input[type="hidden"]',
     })

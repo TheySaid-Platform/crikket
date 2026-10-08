@@ -5,6 +5,20 @@ import type { StorageProvider } from "./storage"
 // being read into memory.
 export const MAX_REPLAY_BYTES = 32 * 1024 * 1024
 
+/** Refuses an uploaded replay too large to be shown later. */
+export async function assertReplayUploadSize(
+  upload: { attachmentType: string; captureKey: string },
+  storage: Pick<StorageProvider, "size">
+): Promise<void> {
+  if (upload.attachmentType !== "replay") return
+  const size = await storage.size(upload.captureKey)
+  if (size !== null && size > MAX_REPLAY_BYTES) {
+    throw new ORPCError("PAYLOAD_TOO_LARGE", {
+      message: "This replay is too large. Send a shorter part of it.",
+    })
+  }
+}
+
 /**
  * The stored replay of a report, as it was uploaded (gzipped JSON). The
  * server never unpacks it: the browser does, so a file that unpacks to

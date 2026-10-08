@@ -2,7 +2,6 @@
 
 import {
   type PlaybackHandle,
-  type ReplayEvents,
   ReplayPlayer,
 } from "@crikket/ui/components/replay-player"
 import { useIsMobile } from "@crikket/ui/hooks/use-mobile"
@@ -10,6 +9,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 import { forwardRef } from "react"
 import { client } from "@/utils/orpc"
+import { readReplayFile } from "./read-replay-file"
 
 interface ReplayAttachmentProps {
   reportId: string
@@ -18,16 +18,9 @@ interface ReplayAttachmentProps {
   onTimeUpdate?: (currentTimeMs: number) => void
 }
 
-// The server sends the replay as it was stored (gzipped JSON), and the
-// browser unpacks it.
-async function loadReplayEvents(reportId: string): Promise<ReplayEvents> {
-  const file = await client.bugReport.getReplay({ id: reportId })
-  const head = new Uint8Array(await file.slice(0, 2).arrayBuffer())
-  const isGzip = head[0] === 0x1f && head[1] === 0x8b
-  const stream = isGzip
-    ? file.stream().pipeThrough(new DecompressionStream("gzip"))
-    : file.stream()
-  return JSON.parse(await new Response(stream).text()) as ReplayEvents
+// The server sends the replay as it was stored, and the browser unpacks it.
+async function loadReplayEvents(reportId: string) {
+  return readReplayFile(await client.bugReport.getReplay({ id: reportId }))
 }
 
 /** An instant replay: the page rebuilt from its recorded changes. */

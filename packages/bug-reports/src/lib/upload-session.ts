@@ -29,6 +29,7 @@ import {
   processBugReportIngestionJob,
   queueBugReportIngestionJob,
 } from "./ingestion-jobs"
+import { assertReplayUploadSize } from "./replay"
 import { getStorageProvider } from "./storage"
 import {
   type AttachmentType,
@@ -316,6 +317,7 @@ export async function finalizeBugReportUpload(input: {
       message: "Capture upload has not completed yet.",
     })
   }
+  await assertReplayUploadSize(uploadSession, storage)
 
   if (uploadSession.debuggerKey) {
     const hasDebugger = await storage.exists(uploadSession.debuggerKey)

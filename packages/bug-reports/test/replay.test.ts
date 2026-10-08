@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test"
 import { gzipSync } from "node:zlib"
-import { MAX_REPLAY_BYTES, readReplayFile } from "../src/lib/replay"
+import {
+  assertReplayUploadSize,
+  MAX_REPLAY_BYTES,
+  readReplayFile,
+} from "../src/lib/replay"
 
 const stored = gzipSync(JSON.stringify([{ type: 4, timestamp: 1 }]))
 
@@ -56,5 +60,30 @@ describe("readReplayFile", () => {
       code: "PAYLOAD_TOO_LARGE",
     })
     expect(calls.read).toBe(0)
+  })
+})
+
+describe("assertReplayUploadSize", () => {
+  const upload = { attachmentType: "replay", captureKey: "replay.json.gz" }
+
+  it("accepts a replay up to the limit, and other captures", async () => {
+    await expect(
+      assertReplayUploadSize(upload, createStorage(MAX_REPLAY_BYTES).storage)
+    ).resolves.toBeUndefined()
+    await expect(
+      assertReplayUploadSize(
+        { attachmentType: "video", captureKey: "video.webm" },
+        createStorage(MAX_REPLAY_BYTES + 1).storage
+      )
+    ).resolves.toBeUndefined()
+  })
+
+  it("refuses an uploaded replay that could never be shown", async () => {
+    await expect(
+      assertReplayUploadSize(
+        upload,
+        createStorage(MAX_REPLAY_BYTES + 1).storage
+      )
+    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" })
   })
 })

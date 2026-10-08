@@ -19,6 +19,7 @@ import {
   setRecordingBadge,
 } from "@/lib/capture-context"
 import { saveReplay } from "@/lib/recording-store"
+import { createEarlierPages } from "./earlier-pages"
 import {
   type CollectReplayResponse,
   createReplayEndEvent,
@@ -60,9 +61,7 @@ const PAGE_SCRIPTS: chrome.scripting.RegisteredContentScript[] = [
 ]
 const PAGE_SCRIPT_IDS = PAGE_SCRIPTS.map((script) => script.id)
 
-// What earlier pages of each tab recorded. A reload or navigation ends the
-// page's recorder, and hands its events over before it goes.
-const earlierPages = new Map<number, ReplayEvent[]>()
+const earlierPages = createEarlierPages()
 
 async function isEnabled(): Promise<boolean> {
   const stored = await chrome.storage.local.get(
@@ -176,23 +175,33 @@ function parseReplay(json: string | null | undefined): CollectReplayResponse {
   }
 }
 
-function keepEarlierPage(tabId: number, json: unknown): void {
-  const { events } = parseReplay(typeof json === "string" ? json : null)
+async function keepEarlierPage(
+  sender: chrome.runtime.MessageSender,
+  json: unknown
+): Promise<void> {
+  const tabId = sender.tab?.id
+  if (
+    typeof tabId !== "number" ||
+    sender.frameId !== 0 ||
+    !sender.origin ||
+    typeof json !== "string" ||
+    !(await isEnabled())
+  ) {
+    return
+  }
+  const { events } = parseReplay(json)
   if (!events?.length) return
-  const now = Date.now()
-  earlierPages.set(
-    tabId,
-    keepLastReplay(
-      [...(earlierPages.get(tabId) ?? []), ...events],
-      INSTANT_REPLAY_WINDOW_MS,
-      now
-    )
+  earlierPages.add(
+    { tabId, origin: sender.origin, events, chars: json.length },
+    Date.now()
   )
-  // Pages whose replay is older than the window are of no use any more.
-  for (const [otherTabId, otherEvents] of earlierPages) {
-    if ((otherEvents.at(-1)?.timestamp ?? 0) < now - INSTANT_REPLAY_WINDOW_MS) {
-      earlierPages.delete(otherTabId)
-    }
+}
+
+function getOrigin(url: string | undefined): string {
+  try {
+    return url ? new URL(url).origin : ""
+  } catch {
+    return ""
   }
 }
 
@@ -214,8 +223,9 @@ async function collectPageReplay(tabId: number): Promise<ReplayEvent[]> {
     throw new Error(page.error)
   }
   const now = Date.now()
+  const { url } = await chrome.tabs.get(tabId)
   const events = keepLastReplay(
-    [...(earlierPages.get(tabId) ?? []), ...(page.events ?? [])],
+    [...earlierPages.get(tabId, getOrigin(url), now), ...(page.events ?? [])],
     INSTANT_REPLAY_WINDOW_MS,
     now
   )
@@ -373,7 +383,7 @@ async function syncPageScripts(enabled: boolean): Promise<void> {
   }
 }
 
-async function applySetting(
+async function applySettingNow(
   enabled: boolean,
   options: { injectIntoOpenTabs: boolean }
 ): Promise<void> {
@@ -389,6 +399,18 @@ async function applySetting(
   if (!(await isRecording())) {
     await setRecordingBadge(null)
   }
+}
+
+// One change at a time: two quick changes would register the scripts twice.
+let settingQueue: Promise<void> = Promise.resolve()
+
+function applySetting(
+  enabled: boolean,
+  options: { injectIntoOpenTabs: boolean }
+): Promise<void> {
+  const applied = settingQueue.then(() => applySettingNow(enabled, options))
+  settingQueue = applied.catch(() => undefined)
+  return applied
 }
 
 type MessageHandler = () => Promise<unknown>
@@ -416,12 +438,7 @@ function getMessageHandler(
     case INSTANT_REPLAY_MESSAGE.videoEnded:
       return () => runInOrder(forgetReplayVideo)
     case INSTANT_REPLAY_MESSAGE.pageLeft:
-      return () => {
-        if (typeof sender.tab?.id === "number" && sender.frameId === 0) {
-          keepEarlierPage(sender.tab.id, message.json)
-        }
-        return Promise.resolve()
-      }
+      return () => keepEarlierPage(sender, message.json)
     default:
       return null
   }
@@ -454,7 +471,7 @@ export function registerInstantReplayListeners(): void {
       .catch(reportError)
   })
   chrome.tabs.onRemoved.addListener((tabId) => {
-    earlierPages.delete(tabId)
+    earlierPages.deleteTab(tabId)
   })
   // ponytail: keeps the worker alive while instant replay is on; persist the
   // recent logs to chrome.storage.session if Chrome stops honoring this.

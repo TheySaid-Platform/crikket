@@ -57,6 +57,15 @@ export function startReplayBridge(): void {
 
   chrome.runtime.onMessage.addListener(onMessage)
   chrome.storage.onChanged.addListener(onStorageChanged)
+  // Turned off while this script was on its way to the page.
+  chrome.storage.local
+    .get(INSTANT_REPLAY_ENABLED_STORAGE_KEY)
+    .then((stored) => {
+      if (stored[INSTANT_REPLAY_ENABLED_STORAGE_KEY] !== true) {
+        document.dispatchEvent(new CustomEvent(REPLAY_PAGE_EVENT.stop))
+      }
+    })
+    .catch(() => undefined)
   document.addEventListener(
     REPLACE_EVENT,
     () => {
@@ -75,7 +84,9 @@ export function startReplayBridge(): void {
   // keeps what it recorded, so the replay goes on across pages.
   window.addEventListener(
     "pagehide",
-    () => {
+    (event) => {
+      // Only the browser's own: the page could send this as often as it likes.
+      if (!event.isTrusted) return
       const json = askRecorder("take")
       if (!json) return
       chrome.runtime
