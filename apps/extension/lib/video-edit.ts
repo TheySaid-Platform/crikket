@@ -1,5 +1,3 @@
-import { trimDebuggerPayload } from "@crikket/capture-core/debugger/trim"
-import type { BugReportDebuggerPayload } from "@crikket/capture-core/debugger/types"
 import {
   ALL_FORMATS,
   BlobSource,
@@ -10,6 +8,7 @@ import {
   type VideoSample,
   WebMOutputFormat,
 } from "mediabunny"
+import type { CaptureType } from "@/hooks/use-recorder-init"
 import { type Annotation, drawAnnotation } from "@/lib/annotations"
 import { pixelateRegion } from "@/lib/pixelate"
 
@@ -71,20 +70,8 @@ export function drawVideoDrawings(
   }
 }
 
-/** Paused time is already left out when the payload is built. */
-export function alignDebuggerPayload(
-  payload: BugReportDebuggerPayload,
-  edits: VideoEdits | null
-): BugReportDebuggerPayload {
-  if (!edits) return payload
-  return trimDebuggerPayload(payload, {
-    startMs: edits.trimStartMs,
-    endMs: edits.trimEndMs,
-  })
-}
-
 export function getSubmissionDurationMs(input: {
-  captureType: "video" | "screenshot"
+  captureType: CaptureType
   videoEdits: VideoEdits | null
   recordedDurationMs: number | null
   startTime: number | null

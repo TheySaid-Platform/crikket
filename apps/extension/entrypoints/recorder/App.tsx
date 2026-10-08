@@ -9,9 +9,14 @@ import {
   type ReportPage,
   suggestReportTitle,
 } from "@crikket/capture-core/debugger/report-title"
-import { trimDebuggerSnapshot } from "@crikket/capture-core/debugger/trim"
+import {
+  type DebuggerTrimRange,
+  trimDebuggerPayload,
+  trimDebuggerSnapshot,
+} from "@crikket/capture-core/debugger/trim"
 import type {
   BugReportDebuggerPayload,
+  DebuggerSessionSnapshot,
   DebuggerSessionTab,
   RecordingPause,
 } from "@crikket/capture-core/debugger/types"
@@ -27,6 +32,7 @@ import { CloseReviewButton } from "@/components/close-review-button"
 import { EditStep } from "@/components/edit-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
+import { ReplayOrCapturePreview } from "@/components/replay-preview"
 import { ReviewShell } from "@/components/review-shell"
 import { SuccessStep } from "@/components/success-step"
 import { useCaptureContext } from "@/hooks/use-capture-context"
@@ -35,6 +41,7 @@ import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { type CaptureType, useRecorderInit } from "@/hooks/use-recorder-init"
 import { useRecorderMicSync } from "@/hooks/use-recorder-mic-sync"
 import { useRecorderRecordingSync } from "@/hooks/use-recorder-recording-sync"
+import { useReplayCapture } from "@/hooks/use-replay-capture"
 import { useReviewRecording } from "@/hooks/use-review-recording"
 import { useScreenCapture } from "@/hooks/use-screen-capture"
 import { useTimer } from "@/hooks/use-timer"
@@ -50,6 +57,7 @@ import {
   type CaptureContext,
   readVideoSourceFromSearch,
 } from "@/lib/capture-context"
+import { packReplay, type ReplayEvent } from "@/lib/instant-replay/protocol"
 import { loadDebuggerSnapshot } from "@/lib/load-debugger-snapshot"
 import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
 import {
@@ -65,7 +73,7 @@ import {
 } from "@/lib/recorder-submit"
 import type { FullPageDetails, StoredRecording } from "@/lib/recording-store"
 import { formatDuration, getDeviceInfo } from "@/lib/utils"
-import { alignDebuggerPayload, getSubmissionDurationMs } from "@/lib/video-edit"
+import { getSubmissionDurationMs, type VideoEdits } from "@/lib/video-edit"
 
 type State =
   | "idle"
@@ -86,6 +94,13 @@ const FORM_STATES: ReadonlySet<State> = new Set([
 const CAPTURE_NOUNS: Record<CaptureType, string> = {
   video: "recording",
   screenshot: "screenshot",
+  replay: "replay",
+}
+
+const FALLBACK_TITLES: Record<CaptureType, string> = {
+  video: "Video bug report",
+  screenshot: "Screenshot bug report",
+  replay: "Instant replay bug report",
 }
 
 // Editing happens after recording stopped, so other hooks treat it as "stopped".
@@ -137,6 +152,7 @@ function App() {
     useState<FullPageDetails | null>(null)
   // Pauses in a background recording; the video leaves them out.
   const [recordingPauses, setRecordingPauses] = useState<RecordingPause[]>([])
+  const replayCapture = useReplayCapture()
   const [debuggerSummary, setDebuggerSummary] =
     useState<DebuggerCaptureSummary>(EMPTY_DEBUGGER_SUMMARY)
   const {
@@ -263,10 +279,11 @@ function App() {
         (event) => !isDuringPause(event.timestamp, pauses)
       ),
     }
-    const payload = alignDebuggerPayload(
-      buildDebuggerSubmissionPayload(snapshot, pauses),
-      videoEdits
-    )
+    const { payload, reportSnapshot } = keepSentPart({
+      snapshot,
+      pauses,
+      sentRange: getSentRange(replayCapture.keptRange, videoEdits),
+    })
     const summary = getDebuggerCaptureSummary(payload)
     const hasPayloadData = hasDebuggerPayloadData(payload)
 
@@ -280,16 +297,6 @@ function App() {
       )
     }
 
-    // The title and first page come from what the report keeps, so an error
-    // that was trimmed out cannot name it.
-    const reportSnapshot = videoEdits
-      ? trimDebuggerSnapshot(
-          snapshot,
-          { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs },
-          pauses
-        )
-      : snapshot
-
     return {
       sessionId,
       payload: hasPayloadData ? payload : undefined,
@@ -299,7 +306,13 @@ function App() {
       firstPage: findFirstReportPage(reportSnapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
-  }, [captureType, debuggerSessionId, recordingPauses, videoEdits])
+  }, [
+    captureType,
+    debuggerSessionId,
+    recordingPauses,
+    replayCapture.keptRange,
+    videoEdits,
+  ])
 
   // When the video ended. Sent once, before the report is built, so the
   // background stops following tabs and drops later events.
@@ -499,6 +512,11 @@ function App() {
       recordingStoppedAtRef.current = recording.stoppedAt
       setState("stopped")
     },
+    onReplayLoaded: (stored) => {
+      replayCapture.load(stored)
+      setRecordedDurationMs(stored.stoppedAt - stored.startedAt)
+      setState("stopped")
+    },
     onScreenshotLoaded: (blob, fullPage) => {
       setScreenshotBlob(blob)
       setFullPageDetails(fullPage)
@@ -519,6 +537,7 @@ function App() {
     setPreSubmitWarnings([])
     setDebuggerSummary(EMPTY_DEBUGGER_SUMMARY)
     setRecordedDurationMs(null)
+    replayCapture.reset()
     updateStartTime(null)
     updatePausedAt(null)
     pausesRef.current = []
@@ -540,8 +559,7 @@ function App() {
     description: string
     priority: Priority
   }) => {
-    const blob = activeBlob
-    if (!blob || blob.size === 0) {
+    if (!hasCaptureData(replayCapture.keptEvents, activeBlob)) {
       setSubmitError("Capture data is missing. Please capture again.")
       setState("stopped")
       return
@@ -552,12 +570,14 @@ function App() {
     setSubmissionWarnings([])
 
     try {
-      const durationMs = getSubmissionDurationMs({
-        captureType,
-        videoEdits,
-        recordedDurationMs,
-        startTime,
-      })
+      const durationMs = replayCapture.keptRange
+        ? replayCapture.keptRange.endMs - replayCapture.keptRange.startMs
+        : getSubmissionDurationMs({
+            captureType,
+            videoEdits,
+            recordedDurationMs,
+            startTime,
+          })
       await markRecordingStopped()
       const debuggerSubmission = await getDebuggerSubmissionInput()
       const captureContextSubmissionData = buildCaptureContextSubmissionData(
@@ -568,11 +588,13 @@ function App() {
         ...captureContextSubmissionData.warnings,
       ]
 
-      const attachment = await prepareAttachment(
-        captureType,
-        blob,
-        originalDurationMs ?? 0
-      )
+      const attachment = replayCapture.keptEvents
+        ? await packReplay(replayCapture.keptEvents)
+        : await prepareAttachment(
+            captureType,
+            activeBlob ?? new Blob(),
+            originalDurationMs ?? 0
+          )
       const result = await submitBugReportWithUploads({
         attachment,
         attachmentType: captureType,
@@ -625,7 +647,7 @@ function App() {
   const suggestedTitle =
     debuggerTitle ||
     (isWebPageUrl(captureContext.url) ? captureContext.title?.trim() : "") ||
-    (captureType === "video" ? "Video bug report" : "Screenshot bug report")
+    FALLBACK_TITLES[captureType]
   const previewUrl = useMemo(() => {
     if (!activeBlob) return null
     return URL.createObjectURL(activeBlob)
@@ -719,16 +741,22 @@ function App() {
             onSubmit={handleSubmit}
             preSubmitWarnings={preSubmitWarnings}
             preview={
-              <CapturePreview
-                captureType={captureType}
+              <ReplayOrCapturePreview
                 disabled={state === "submitting"}
-                durationMs={originalDurationMs}
-                fullPage={fullPageDetails}
-                isScreenshotEdited={editedScreenshot !== null}
-                onEdit={() => setState("editing")}
-                onTrimChange={setVideoTrim}
-                previewUrl={previewUrl}
-                videoEdits={videoEdits}
+                otherwise={
+                  <CapturePreview
+                    captureType={captureType}
+                    disabled={state === "submitting"}
+                    durationMs={originalDurationMs}
+                    fullPage={fullPageDetails}
+                    isScreenshotEdited={editedScreenshot !== null}
+                    onEdit={() => setState("editing")}
+                    onTrimChange={setVideoTrim}
+                    previewUrl={previewUrl}
+                    videoEdits={videoEdits}
+                  />
+                }
+                replay={replayCapture}
               />
             }
             submitError={submitError}
@@ -746,6 +774,50 @@ function App() {
       ) : null}
     </ReviewShell>
   )
+}
+
+// The part of the capture that is sent: the kept end of an instant replay,
+// or the trimmed video.
+function getSentRange(
+  replayRange: DebuggerTrimRange | null,
+  videoEdits: VideoEdits | null
+): DebuggerTrimRange | null {
+  if (replayRange) return replayRange
+  return videoEdits
+    ? { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs }
+    : null
+}
+
+// The logs of the part that is sent, timed from its start. The title and
+// first page come from that part too, so an error trimmed out cannot name it.
+function keepSentPart(input: {
+  snapshot: DebuggerSessionSnapshot
+  pauses: RecordingPause[]
+  sentRange: DebuggerTrimRange | null
+}): {
+  payload: BugReportDebuggerPayload
+  reportSnapshot: DebuggerSessionSnapshot
+} {
+  const payload = buildDebuggerSubmissionPayload(input.snapshot, input.pauses)
+  if (!input.sentRange) {
+    return { payload, reportSnapshot: input.snapshot }
+  }
+  return {
+    payload: trimDebuggerPayload(payload, input.sentRange),
+    reportSnapshot: trimDebuggerSnapshot(
+      input.snapshot,
+      input.sentRange,
+      input.pauses
+    ),
+  }
+}
+
+// An instant replay sends its kept events; anything else, its blob.
+function hasCaptureData(
+  replayEvents: ReplayEvent[] | null,
+  blob: Blob | null
+): boolean {
+  return replayEvents ? replayEvents.length > 0 : Boolean(blob && blob.size > 0)
 }
 
 // While paused, show the exact paused time, as the popup does.

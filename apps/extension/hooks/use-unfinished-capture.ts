@@ -6,6 +6,7 @@ import {
   type PendingReview,
   RECORDING_ERROR_STORAGE_KEY,
 } from "@/lib/background-recording/protocol"
+import { setRecordingBadge } from "@/lib/capture-context"
 
 // For the popup: the review not sent yet, and why the last recording failed.
 export function useUnfinishedCapture() {
@@ -28,7 +29,7 @@ export function useUnfinishedCapture() {
       await chrome.storage.local.remove(RECORDING_ERROR_STORAGE_KEY)
       // The "!" on the toolbar icon pointed here.
       if ((await chrome.action.getBadgeText({})) === "!") {
-        await chrome.action.setBadgeText({ text: "" })
+        await setRecordingBadge(null)
       }
     }
     read().catch((error: unknown) => {

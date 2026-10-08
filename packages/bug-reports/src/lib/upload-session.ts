@@ -29,10 +29,14 @@ import {
   processBugReportIngestionJob,
   queueBugReportIngestionJob,
 } from "./ingestion-jobs"
+import { assertReplayUploadSize } from "./replay"
 import { getStorageProvider } from "./storage"
 import {
+  type AttachmentType,
+  attachmentTypes,
   buildFallbackTitle,
   formatDurationMs,
+  isAttachmentType,
   metadataInputSchema,
   optionalText,
   visibilityValues,
@@ -59,7 +63,7 @@ export const createBugReportUploadSessionInputSchema = z.object({
   priority: z.enum(priorityValues).default(PRIORITY_OPTIONS.none),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   url: z.string().url().optional(),
-  attachmentType: z.enum(["video", "screenshot"]),
+  attachmentType: z.enum(attachmentTypes),
   visibility: z.enum(visibilityValues).default("private"),
   metadata: metadataInputSchema,
   deviceInfo: z
@@ -121,15 +125,19 @@ function buildEntitlementPayload(
   }
 }
 
+const DEFAULT_CAPTURE_CONTENT_TYPES: Record<AttachmentType, string> = {
+  video: "video/webm",
+  screenshot: "image/png",
+  replay: "application/gzip",
+}
+
 function resolveCaptureContentType(input: {
   captureContentType?: string
-  captureType: "video" | "screenshot"
+  captureType: AttachmentType
 }): string {
-  if (input.captureContentType) {
-    return input.captureContentType
-  }
-
-  return input.captureType === "video" ? "video/webm" : "image/png"
+  return (
+    input.captureContentType ?? DEFAULT_CAPTURE_CONTENT_TYPES[input.captureType]
+  )
 }
 
 export async function createBugReportUploadSession(input: {
@@ -309,6 +317,7 @@ export async function finalizeBugReportUpload(input: {
       message: "Capture upload has not completed yet.",
     })
   }
+  await assertReplayUploadSize(uploadSession, storage)
 
   if (uploadSession.debuggerKey) {
     const hasDebugger = await storage.exists(uploadSession.debuggerKey)
@@ -323,8 +332,9 @@ export async function finalizeBugReportUpload(input: {
     input.input.captureContentType ??
     uploadSession.captureContentType ??
     resolveCaptureContentType({
-      captureType:
-        uploadSession.attachmentType === "screenshot" ? "screenshot" : "video",
+      captureType: isAttachmentType(uploadSession.attachmentType)
+        ? uploadSession.attachmentType
+        : "video",
     })
   const captureUploadedAt = new Date()
   const debuggerUploadedAt =

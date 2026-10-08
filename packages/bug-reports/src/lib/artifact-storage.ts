@@ -10,14 +10,19 @@ export const bugReportArtifactKindSchema = z.enum(bugReportArtifactKindValues)
 
 export type BugReportArtifactKind = z.infer<typeof bugReportArtifactKindSchema>
 
+const CAPTURE_FILENAMES = {
+  video: "video.webm",
+  screenshot: "screenshot.png",
+  replay: "replay.json.gz",
+} as const
+
 export function buildCaptureArtifactKey(input: {
   organizationId: string
   bugReportId: string
-  captureType: "video" | "screenshot"
+  captureType: keyof typeof CAPTURE_FILENAMES
 }): string {
   return (
-    buildBugReportArtifactBasePath(input) +
-    getCaptureFilename(input.captureType)
+    buildBugReportArtifactBasePath(input) + CAPTURE_FILENAMES[input.captureType]
   )
 }
 
@@ -49,8 +54,4 @@ function buildBugReportBasePath(input: {
   bugReportId: string
 }): string {
   return `organizations/${input.organizationId}/bug-reports/${input.bugReportId}`
-}
-
-function getCaptureFilename(captureType: "video" | "screenshot"): string {
-  return captureType === "video" ? "video.webm" : "screenshot.png"
 }

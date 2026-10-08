@@ -15,11 +15,13 @@ import {
   setRecordingBadge,
   TOGGLE_RECORDING_PAUSE_MESSAGE,
 } from "@/lib/capture-context"
+import { saveInstantReplay } from "@/lib/instant-replay/background"
 
 export const START_RECORDING_COMMAND = "start-video-recording"
 export const START_SCREENSHOT_COMMAND = "start-screenshot-capture"
 export const STOP_RECORDING_COMMAND = "stop-video-recording"
 export const TOGGLE_PAUSE_COMMAND = "toggle-pause-recording"
+export const SAVE_INSTANT_REPLAY_COMMAND = "save-instant-replay"
 
 export async function handleStartRecordingFromHotkey(): Promise<void> {
   await queueCaptureStartFromHotkey(HOTKEY_START_VIDEO_CAPTURE_STORAGE_KEY)
@@ -110,7 +112,23 @@ export async function handleRecorderHotkeyCommand(
 
   if (command === TOGGLE_PAUSE_COMMAND) {
     await handleTogglePauseFromHotkey()
+    return
   }
+
+  if (command === SAVE_INSTANT_REPLAY_COMMAND) {
+    await handleSaveInstantReplayFromHotkey()
+  }
+}
+
+async function handleSaveInstantReplayFromHotkey(): Promise<void> {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  })
+  if (typeof tab?.id !== "number") {
+    throw new Error("No tab to save an instant replay of.")
+  }
+  await saveInstantReplay(tab.id)
 }
 
 async function readRecordingState(): Promise<{

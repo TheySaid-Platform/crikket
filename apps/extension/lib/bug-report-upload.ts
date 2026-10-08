@@ -8,7 +8,7 @@ import { client } from "./orpc"
 
 export async function submitBugReportWithUploads(input: {
   attachment: Blob
-  attachmentType: "video" | "screenshot"
+  attachmentType: "video" | "screenshot" | "replay"
   debuggerPayload?: BugReportDebuggerPayload
   debuggerSummary: {
     actions: number

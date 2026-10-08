@@ -21,6 +21,7 @@ import {
   RECORDING_STARTED_AT_STORAGE_KEY,
   VIDEO_SOURCE_QUERY_PARAM,
 } from "@/lib/capture-context"
+import { INSTANT_REPLAY_MESSAGE } from "@/lib/instant-replay/protocol"
 import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
 import { delay } from "@/lib/utils"
 
@@ -77,6 +78,14 @@ export function usePopupCapture(): UsePopupCaptureReturn {
     try {
       const captureContext = await getActiveTabContext()
       const activeTab = await getActiveCaptureTab()
+
+      // Chrome cannot capture a tab twice, so instant replay's video gives
+      // way to a recording.
+      if (!isScreenshotType(captureType)) {
+        await chrome.runtime.sendMessage({
+          type: INSTANT_REPLAY_MESSAGE.videoStop,
+        })
+      }
 
       debuggerSessionId = await initializeDebuggerSession(
         captureType,

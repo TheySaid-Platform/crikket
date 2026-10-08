@@ -41,6 +41,11 @@ export default defineConfig({
           mac: "Alt+Shift+P",
         },
       },
+      // Chrome allows four suggested shortcuts, all taken above; users pick
+      // one for this in chrome://extensions/shortcuts.
+      "save-instant-replay": {
+        description: "Share instant replay (the last few minutes of the tab)",
+      },
     },
     permissions: [
       "activeTab",

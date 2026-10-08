@@ -109,7 +109,7 @@ async function clearBackgroundRecording(): Promise<void> {
   await showRecordingBadge(null)
 }
 
-async function hasOffscreenDocument(): Promise<boolean> {
+export async function hasOffscreenDocument(): Promise<boolean> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
     documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
@@ -117,7 +117,7 @@ async function hasOffscreenDocument(): Promise<boolean> {
   return contexts.length > 0
 }
 
-async function ensureOffscreenDocument(): Promise<void> {
+export async function ensureOffscreenDocument(): Promise<void> {
   if (await hasOffscreenDocument()) return
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_DOCUMENT_PATH,
@@ -132,13 +132,13 @@ async function ensureOffscreenDocument(): Promise<void> {
   })
 }
 
-async function closeOffscreenDocument(): Promise<void> {
+export async function closeOffscreenDocument(): Promise<void> {
   if (await hasOffscreenDocument()) {
     await chrome.offscreen.closeDocument()
   }
 }
 
-async function sendToOffscreen(
+export async function sendToOffscreen(
   request: OffscreenRequest
 ): Promise<OffscreenResponse> {
   try {
@@ -158,7 +158,7 @@ async function sendToOffscreen(
 // Commands from the popup, the floating bar and hotkeys can arrive together;
 // run them one at a time so they never overwrite each other's state.
 let commandQueue: Promise<unknown> = Promise.resolve()
-function runInOrder<T>(command: () => Promise<T>): Promise<T> {
+export function runInOrder<T>(command: () => Promise<T>): Promise<T> {
   const result = commandQueue.then(command, command)
   commandQueue = result.catch(() => undefined)
   return result
@@ -217,7 +217,7 @@ async function keepDebuggerSession(sessionId: string): Promise<void> {
 }
 
 // In case the live session is lost before the review loads it.
-async function backUpLogs(sessionId: string): Promise<void> {
+export async function backUpLogs(sessionId: string): Promise<void> {
   try {
     const snapshot =
       await getDebuggerSessionStore()?.getSessionSnapshot(sessionId)
@@ -286,7 +286,7 @@ async function buildOffscreenStart(
 }
 
 // A new capture replaces a review that was never sent.
-async function abandonPendingReview(): Promise<void> {
+export async function abandonPendingReview(): Promise<void> {
   const pending = await readPendingReview()
   if (!pending) return
   await abandonCapture(pending.debuggerSessionId)
@@ -486,10 +486,10 @@ async function focusTab(tabId: number): Promise<void> {
 
 // Shows the review over the page, or in a tab of its own when the page cannot
 // show it. Remembered until it is sent or dropped, so it survives a reload.
-async function openReview(input: {
+export async function openReview(input: {
   tabId: number
   debuggerSessionId: string
-  captureType: "video" | "screenshot"
+  captureType: "video" | "screenshot" | "replay"
   wide?: boolean
 }): Promise<void> {
   const reviewUrl = new URL(
