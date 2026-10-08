@@ -23,13 +23,14 @@ export const recordBugReportView = o
 
     const report = await db.query.bugReport.findFirst({
       where: eq(bugReport.id, input.id),
-      columns: { reporterId: true },
+      columns: { reporterId: true, submissionStatus: true },
     })
     const viewerUserId = context.session?.user.id
 
     if (
       !shouldRecordBugReportView({
         reporterId: report?.reporterId ?? null,
+        submissionStatus: report?.submissionStatus ?? "",
         viewerUserId,
       })
     ) {

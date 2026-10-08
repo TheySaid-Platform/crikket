@@ -18,26 +18,51 @@ describe("bug report view notification policy", () => {
 
   it("records views by other people only", () => {
     expect(
-      shouldRecordBugReportView({ reporterId: "a", viewerUserId: "b" })
+      shouldRecordBugReportView({
+        reporterId: "a",
+        submissionStatus: "ready",
+        viewerUserId: "b",
+      })
     ).toBeTrue()
     expect(
-      shouldRecordBugReportView({ reporterId: "a", viewerUserId: undefined })
+      shouldRecordBugReportView({
+        reporterId: "a",
+        submissionStatus: "ready",
+        viewerUserId: undefined,
+      })
     ).toBeTrue()
   })
 
   it("ignores the reporter's own views", () => {
     expect(
-      shouldRecordBugReportView({ reporterId: "a", viewerUserId: "a" })
+      shouldRecordBugReportView({
+        reporterId: "a",
+        submissionStatus: "ready",
+        viewerUserId: "a",
+      })
     ).toBeFalse()
   })
 
   it("ignores reports with no reporter to notify", () => {
     expect(
-      shouldRecordBugReportView({ reporterId: null, viewerUserId: "b" })
+      shouldRecordBugReportView({
+        reporterId: null,
+        submissionStatus: "ready",
+        viewerUserId: "b",
+      })
     ).toBeFalse()
-    expect(
-      shouldRecordBugReportView({ reporterId: null, viewerUserId: undefined })
-    ).toBeFalse()
+  })
+
+  it("ignores views before the report is ready", () => {
+    for (const submissionStatus of ["processing", "failed"]) {
+      expect(
+        shouldRecordBugReportView({
+          reporterId: "a",
+          submissionStatus,
+          viewerUserId: "b",
+        })
+      ).toBeFalse()
+    }
   })
 
   it("names the viewer with name and email", () => {

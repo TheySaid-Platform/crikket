@@ -1,3 +1,5 @@
+import { BUG_REPORT_SUBMISSION_STATUS_OPTIONS } from "@crikket/shared/constants/bug-report"
+
 export const ANONYMOUS_VIEWER_KEY = "anon"
 
 const BUG_REPORT_VIEW_NOTIFICATION_BASE_DELAY_MS = 60_000
@@ -15,11 +17,20 @@ export function getBugReportViewerKey(viewerUserId?: string): string {
   return viewerUserId ? `user:${viewerUserId}` : ANONYMOUS_VIEWER_KEY
 }
 
+/**
+ * Only views of a ready report count: before that the video can't be watched
+ * yet, so "opened your recording" would not be true.
+ */
 export function shouldRecordBugReportView(input: {
   reporterId: string | null
+  submissionStatus: string
   viewerUserId?: string
 }): boolean {
-  return Boolean(input.reporterId) && input.reporterId !== input.viewerUserId
+  return (
+    Boolean(input.reporterId) &&
+    input.reporterId !== input.viewerUserId &&
+    input.submissionStatus === BUG_REPORT_SUBMISSION_STATUS_OPTIONS.ready
+  )
 }
 
 export function calculateBugReportViewNotificationRetryDelayMs(

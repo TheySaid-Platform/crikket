@@ -382,19 +382,20 @@ export function BugReportView({ id }: BugReportViewProps) {
     })
   )
 
-  // Once per report per page load, after it loads. The ref keeps React
-  // StrictMode and refetches from recording it twice.
+  // Once per report per page load, once the report is ready to watch. The ref
+  // keeps React StrictMode and refetches from recording it twice.
   const recordedViewIdRef = useRef<string | null>(null)
-  const isReportLoaded = Boolean(data)
+  const isReportReadyToView =
+    data?.submissionStatus === BUG_REPORT_SUBMISSION_STATUS_OPTIONS.ready
   useEffect(() => {
-    if (!isReportLoaded || recordedViewIdRef.current === id) {
+    if (!isReportReadyToView || recordedViewIdRef.current === id) {
       return
     }
     recordedViewIdRef.current = id
     client.bugReport.recordView({ id }).catch((viewError: unknown) => {
       reportNonFatalError("Failed to record bug report view", viewError)
     })
-  }, [id, isReportLoaded])
+  }, [id, isReportReadyToView])
 
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
