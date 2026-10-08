@@ -3,7 +3,7 @@ import {
   createBugReportUploadSessionInputSchema,
 } from "@crikket/bug-reports/lib/upload-session"
 import { ORPCError } from "@orpc/server"
-import type { z } from "zod"
+import { z } from "zod"
 import {
   createCaptureFinalizeToken,
   isCaptureSubmitProtectionEnabled,
@@ -15,11 +15,18 @@ import {
   toCaptureErrorResponse,
 } from "./shared"
 
+// The embed sends videos and screenshots. Instant replays come only from the
+// extension, by a signed-in user.
+const embedUploadSessionInputSchema =
+  createBugReportUploadSessionInputSchema.extend({
+    attachmentType: z.enum(["video", "screenshot"]),
+  })
+
 async function getRequestBody(
   request: Request
-): Promise<z.infer<typeof createBugReportUploadSessionInputSchema>> {
+): Promise<z.infer<typeof embedUploadSessionInputSchema>> {
   try {
-    return createBugReportUploadSessionInputSchema.parse(
+    return embedUploadSessionInputSchema.parse(
       (await request.json()) as unknown
     )
   } catch (error) {

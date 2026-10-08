@@ -50,7 +50,7 @@ function getViewportRatio(events: ReplayEvents): number {
 }
 
 /**
- * Plays a DOM session replay (rrweb), like Jam's instant replay, with
+ * Plays a DOM session replay (rrweb) of an instant replay, with
  * rrweb-player's own controls.
  */
 export const ReplayPlayer = forwardRef<PlaybackHandle, ReplayPlayerProps>(

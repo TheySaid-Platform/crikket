@@ -1,14 +1,14 @@
 import { EventType, type eventWithTime } from "@rrweb/types"
 
-// Instant replay, like Jam's: while it is on, every page keeps a DOM session
-// replay (rrweb) of its last few minutes in memory. No video is recorded, and
-// nothing leaves the browser until the user saves a replay and sends it.
+// Instant replay: while it is on, every page keeps a DOM session replay
+// (rrweb) of its last few minutes in memory, and the worker keeps what earlier
+// pages of the tab recorded. Nothing leaves the browser until the user shares
+// a replay and sends the report.
 
 export type ReplayEvent = eventWithTime
 
 export const INSTANT_REPLAY_ENABLED_STORAGE_KEY = "instantReplayEnabled"
-// How far back a replay goes. Jam keeps 2 minutes, which is often too short
-// to show how a bug came about.
+// How far back a replay goes: long enough to show how a bug came about.
 export const INSTANT_REPLAY_WINDOW_MS = 6 * 60_000
 // A replay can only start at a full snapshot of the page, taken this often.
 export const INSTANT_REPLAY_CHECKOUT_MS = 30_000
@@ -19,6 +19,9 @@ export const INSTANT_REPLAY_MESSAGE = {
   save: "crikket:replay:save",
   // Background → page: hand over the buffered replay.
   collect: "crikket:replay:collect",
+  // Page → background: the page is going away (reload, navigation); here is
+  // what it recorded.
+  pageLeft: "crikket:replay:page-left",
   // Popup → background: keep a video of a tab or the screen, or stop.
   videoStart: "crikket:replay:video-start",
   videoStop: "crikket:replay:video-stop",
@@ -46,22 +49,44 @@ export interface CollectReplayResponse {
   error?: string
 }
 
+// DOM events between the recorder in the page's own world and the bridge in
+// the extension's world. Details are strings, the only kind that crosses.
+export const REPLAY_PAGE_EVENT = {
+  // Bridge → recorder: detail "peek" (collect) or "take" (the page leaves,
+  // so the recorder hands its events over and starts afresh).
+  request: "crikket:replay:request",
+  // Recorder → bridge: detail is a JSON CollectReplayResponse.
+  response: "crikket:replay:response",
+  start: "crikket:replay:start",
+  stop: "crikket:replay:stop",
+  // Back from the back/forward cache: start a new segment.
+  snapshot: "crikket:replay:snapshot",
+} as const
+
 /**
  * The events for the last keepMs before end. A replay can only start at a
  * full snapshot (which opens with a Meta event), so this starts at the latest
- * one taken at least keepMs before the end, or at the first event.
+ * one taken at least keepMs before the end, or at the first event. What
+ * happened between that snapshot and the cut only rebuilds the page as it was
+ * at the cut, so it plays at the cut: the replay lasts exactly keepMs, even
+ * when the page sat still and took no snapshot for a long time.
  */
 export function keepLastReplay(
   events: ReplayEvent[],
   keepMs: number,
   end = events.at(-1)?.timestamp ?? 0
 ): ReplayEvent[] {
+  const cut = end - keepMs
   let start = 0
   for (const [index, event] of events.entries()) {
-    if (event.timestamp > end - keepMs) break
+    if (event.timestamp > cut) break
     if (event.type === EventType.Meta) start = index
   }
-  return start === 0 ? events : events.slice(start)
+  const kept = start === 0 ? events : events.slice(start)
+  if ((kept[0]?.timestamp ?? cut) >= cut) return kept
+  return kept.map((event) =>
+    event.timestamp < cut ? { ...event, timestamp: cut } : event
+  )
 }
 
 /**

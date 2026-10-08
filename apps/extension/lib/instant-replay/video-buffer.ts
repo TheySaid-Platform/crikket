@@ -30,6 +30,23 @@ export interface VideoClip {
   stoppedAt: number
 }
 
+/**
+ * Where a clip that covers everything after cutoffUs can start: the newest
+ * key frame at or before it (frames after a key frame only describe changes
+ * to it), or the first chunk.
+ */
+export function findClipStart(
+  chunks: ReadonlyArray<{ timestamp: number; type: EncodedVideoChunkType }>,
+  cutoffUs: number
+): number {
+  let start = 0
+  for (const [index, chunk] of chunks.entries()) {
+    if (chunk.timestamp > cutoffUs) break
+    if (chunk.type === "key") start = index
+  }
+  return start
+}
+
 export interface VideoReplayBuffer {
   save: () => Promise<VideoClip | null>
   stop: () => void
@@ -59,14 +76,8 @@ export function createVideoReplayBuffer(
   let lastFrame: VideoFrame | null = null
   let isStopped = false
 
-  // Drops everything before the newest key frame that is old enough.
   const prune = () => {
-    const cutoffUs = (Date.now() - windowMs) * 1000
-    let start = 0
-    for (let index = 0; index < chunks.length; index++) {
-      if (chunks[index].timestamp > cutoffUs) break
-      if (chunks[index].type === "key") start = index
-    }
+    const start = findClipStart(chunks, (Date.now() - windowMs) * 1000)
     if (start > 0) chunks.splice(0, start)
   }
 

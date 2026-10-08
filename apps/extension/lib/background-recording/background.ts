@@ -150,7 +150,7 @@ export async function sendToOffscreen(
 // Commands from the popup, the floating bar and hotkeys can arrive together;
 // run them one at a time so they never overwrite each other's state.
 let commandQueue: Promise<unknown> = Promise.resolve()
-function runInOrder<T>(command: () => Promise<T>): Promise<T> {
+export function runInOrder<T>(command: () => Promise<T>): Promise<T> {
   const result = commandQueue.then(command, command)
   commandQueue = result.catch(() => undefined)
   return result

@@ -91,7 +91,7 @@ mock.module("@crikket/bug-reports/lib/capture-public-key", () => ({
 
 mock.module("@crikket/bug-reports/lib/upload-session", () => ({
   createBugReportUploadSessionInputSchema: z.object({
-    attachmentType: z.enum(["video", "screenshot"]),
+    attachmentType: z.enum(["video", "screenshot", "replay"]),
     captureContentType: z.string().optional(),
     description: z.string().optional(),
     debuggerSummary: z
@@ -431,6 +431,30 @@ describe("capture upload session route", () => {
     })
   })
 
+  it("rejects instant replays, which only the extension sends", async () => {
+    const { createCaptureSubmitToken } = await import(
+      CAPTURE_SUBMIT_PROTECTION_PATH
+    )
+    const authorization = createCaptureSubmitToken({
+      keyId: publicKeyRecord.id,
+      origin: validOrigin,
+    })
+
+    const { handleCaptureUploadSession } = await import(
+      CAPTURE_UPLOAD_SESSION_ROUTE_PATH
+    )
+    const response = await handleCaptureUploadSession({
+      request: createUploadSessionRequest({
+        attachmentType: "replay",
+        headers: {
+          "x-crikket-capture-token": authorization!.token,
+        },
+      }),
+    })
+
+    expect(response.status).toBe(400)
+  })
+
   it("rejects the old value after key rotation and accepts the new one", async () => {
     const oldKey = activePublicKeyValue
     activePublicKeyValue = "crk_rotated"
@@ -536,13 +560,14 @@ describe("capture finalize route", () => {
 })
 
 function createUploadSessionRequest(input?: {
+  attachmentType?: string
   headers?: Record<string, string>
 }): Request {
   return new Request(
     "https://api.crikket.io/api/embed/bug-report-upload-session",
     {
       body: JSON.stringify({
-        attachmentType: "screenshot",
+        attachmentType: input?.attachmentType ?? "screenshot",
         captureContentType: "image/png",
         description: "Broken button",
         debuggerSummary: {

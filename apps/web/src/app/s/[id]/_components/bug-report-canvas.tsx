@@ -144,6 +144,7 @@ export const BugReportCanvas = forwardRef<PlaybackHandle, BugReportCanvasProps>(
             />
           ) : showReplay ? (
             <ReplayAttachment
+              compact={compact}
               onTimeUpdate={onTimeUpdate}
               ref={ref}
               reportId={data.id}

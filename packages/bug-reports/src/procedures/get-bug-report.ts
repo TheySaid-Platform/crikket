@@ -1,4 +1,3 @@
-import { gunzipSync } from "node:zlib"
 import { db } from "@crikket/db"
 import { bugReport } from "@crikket/db/schema/bug-report"
 import {
@@ -7,6 +6,7 @@ import {
 } from "@crikket/shared/constants/priorities"
 import { ORPCError } from "@orpc/server"
 import { eq } from "drizzle-orm"
+import { readReplayFile } from "../lib/replay"
 import { getStorageProvider, resolveCaptureUrl } from "../lib/storage"
 import {
   assertBugReportAccessById,
@@ -93,15 +93,10 @@ export const getBugReportById = o
     }
   })
 
-// Storage can hand back a gzip object already decompressed (GCS transcoding).
-function gunzipIfNeeded(data: Buffer): Buffer {
-  const isGzip = data[0] === 0x1f && data[1] === 0x8b
-  return isGzip ? gunzipSync(data) : data
-}
-
 /**
- * The rrweb events of an instant replay, as JSON text. Read through the
- * server, so the report page does not depend on the bucket's CORS rules.
+ * The rrweb events of an instant replay, as the stored gzipped JSON file.
+ * Read through the server, so the report page does not depend on the
+ * bucket's CORS rules.
  */
 export const getBugReportReplay = o
   .input(bugReportIdInputSchema)
@@ -115,10 +110,5 @@ export const getBugReportReplay = o
       where: eq(bugReport.id, input.id),
       columns: { attachmentType: true, captureKey: true },
     })
-    if (!(report?.attachmentType === "replay" && report.captureKey)) {
-      throw new ORPCError("NOT_FOUND", { message: "Replay not found" })
-    }
-
-    const stored = await getStorageProvider().read(report.captureKey)
-    return { events: gunzipIfNeeded(stored).toString("utf8") }
+    return readReplayFile(report ?? null, getStorageProvider())
   })
