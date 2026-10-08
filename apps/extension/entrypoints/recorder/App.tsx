@@ -9,9 +9,14 @@ import {
   type ReportPage,
   suggestReportTitle,
 } from "@crikket/capture-core/debugger/report-title"
-import { trimDebuggerPayload } from "@crikket/capture-core/debugger/trim"
+import {
+  type DebuggerTrimRange,
+  trimDebuggerPayload,
+  trimDebuggerSnapshot,
+} from "@crikket/capture-core/debugger/trim"
 import type {
   BugReportDebuggerPayload,
+  DebuggerSessionSnapshot,
   DebuggerSessionTab,
   RecordingPause,
 } from "@crikket/capture-core/debugger/types"
@@ -27,7 +32,7 @@ import { CloseReviewButton } from "@/components/close-review-button"
 import { EditStep } from "@/components/edit-step"
 import { FormStep } from "@/components/form-step"
 import { RecordingStep } from "@/components/recording-step"
-import { ReplayPreview } from "@/components/replay-preview"
+import { ReplayOrCapturePreview } from "@/components/replay-preview"
 import { ReviewShell } from "@/components/review-shell"
 import { SuccessStep } from "@/components/success-step"
 import { useCaptureContext } from "@/hooks/use-capture-context"
@@ -68,7 +73,7 @@ import {
 } from "@/lib/recorder-submit"
 import type { FullPageDetails, StoredRecording } from "@/lib/recording-store"
 import { formatDuration, getDeviceInfo } from "@/lib/utils"
-import { alignDebuggerPayload, getSubmissionDurationMs } from "@/lib/video-edit"
+import { getSubmissionDurationMs, type VideoEdits } from "@/lib/video-edit"
 
 type State =
   | "idle"
@@ -274,11 +279,11 @@ function App() {
         (event) => !isDuringPause(event.timestamp, pauses)
       ),
     }
-    const fullPayload = buildDebuggerSubmissionPayload(snapshot, pauses)
-    // Only the logs of the part that is sent, timed from its start.
-    const payload = replayCapture.keptRange
-      ? trimDebuggerPayload(fullPayload, replayCapture.keptRange)
-      : alignDebuggerPayload(fullPayload, videoEdits)
+    const { payload, reportSnapshot } = keepSentPart({
+      snapshot,
+      pauses,
+      sentRange: getSentRange(replayCapture.keptRange, videoEdits),
+    })
     const summary = getDebuggerCaptureSummary(payload)
     const hasPayloadData = hasDebuggerPayloadData(payload)
 
@@ -297,8 +302,8 @@ function App() {
       payload: hasPayloadData ? payload : undefined,
       summary,
       tabs: getReportedTabs(snapshot.tabs, snapshot.captureTabId, payload),
-      suggestedTitle: suggestReportTitle(snapshot),
-      firstPage: findFirstReportPage(snapshot),
+      suggestedTitle: suggestReportTitle(reportSnapshot),
+      firstPage: findFirstReportPage(reportSnapshot),
       warnings,
     } satisfies DebuggerSubmissionInput
   }, [
@@ -671,9 +676,10 @@ function App() {
       closeButton={
         <CloseReviewButton
           captureLabel={CAPTURE_NOUNS[captureType]}
-          confirmDiscard={state !== "success"}
-          isVisible={isReview && state !== "idle"}
-          onClose={closeRecorderWindow}
+          closeOnEscape={state !== "editing" && state !== "submitting"}
+          confirmDiscard={state !== "success" && state !== "idle"}
+          isVisible={isReview}
+          onClose={state === "success" ? closeRecorderWindow : handleReset}
           onDiscard={handleReset}
         />
       }
@@ -735,26 +741,23 @@ function App() {
             onSubmit={handleSubmit}
             preSubmitWarnings={preSubmitWarnings}
             preview={
-              replayCapture.replay && replayCapture.keptEvents ? (
-                <ReplayPreview
-                  disabled={state === "submitting"}
-                  events={replayCapture.replay.events}
-                  keptEvents={replayCapture.keptEvents}
-                  onKeepChange={replayCapture.setKeepMs}
-                />
-              ) : (
-                <CapturePreview
-                  captureType={captureType}
-                  disabled={state === "submitting"}
-                  durationMs={originalDurationMs}
-                  fullPage={fullPageDetails}
-                  isScreenshotEdited={editedScreenshot !== null}
-                  onEdit={() => setState("editing")}
-                  onTrimChange={setVideoTrim}
-                  previewUrl={previewUrl}
-                  videoEdits={videoEdits}
-                />
-              )
+              <ReplayOrCapturePreview
+                disabled={state === "submitting"}
+                otherwise={
+                  <CapturePreview
+                    captureType={captureType}
+                    disabled={state === "submitting"}
+                    durationMs={originalDurationMs}
+                    fullPage={fullPageDetails}
+                    isScreenshotEdited={editedScreenshot !== null}
+                    onEdit={() => setState("editing")}
+                    onTrimChange={setVideoTrim}
+                    previewUrl={previewUrl}
+                    videoEdits={videoEdits}
+                  />
+                }
+                replay={replayCapture}
+              />
             }
             submitError={submitError}
           />
@@ -771,6 +774,42 @@ function App() {
       ) : null}
     </ReviewShell>
   )
+}
+
+// The part of the capture that is sent: the kept end of an instant replay,
+// or the trimmed video.
+function getSentRange(
+  replayRange: DebuggerTrimRange | null,
+  videoEdits: VideoEdits | null
+): DebuggerTrimRange | null {
+  if (replayRange) return replayRange
+  return videoEdits
+    ? { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs }
+    : null
+}
+
+// The logs of the part that is sent, timed from its start. The title and
+// first page come from that part too, so an error trimmed out cannot name it.
+function keepSentPart(input: {
+  snapshot: DebuggerSessionSnapshot
+  pauses: RecordingPause[]
+  sentRange: DebuggerTrimRange | null
+}): {
+  payload: BugReportDebuggerPayload
+  reportSnapshot: DebuggerSessionSnapshot
+} {
+  const payload = buildDebuggerSubmissionPayload(input.snapshot, input.pauses)
+  if (!input.sentRange) {
+    return { payload, reportSnapshot: input.snapshot }
+  }
+  return {
+    payload: trimDebuggerPayload(payload, input.sentRange),
+    reportSnapshot: trimDebuggerSnapshot(
+      input.snapshot,
+      input.sentRange,
+      input.pauses
+    ),
+  }
 }
 
 // An instant replay sends its kept events; anything else, its blob.

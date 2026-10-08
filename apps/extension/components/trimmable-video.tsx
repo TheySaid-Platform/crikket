@@ -38,11 +38,7 @@ function formatKeptDuration(ms: number): string {
   return formatDuration(ms)
 }
 
-/**
- * The video with a Jam-style trim bar under it: drag the green handles to keep
- * only part of the recording. Playback stays inside the kept part; the video
- * itself is cut when the report is submitted.
- */
+/** Playback stays inside the kept part; the file is only cut on submit. */
 export function TrimmableVideo({
   src,
   durationMs,

@@ -1,5 +1,4 @@
-// Small DOM helpers for the floating bar, which is plain DOM (no React) so it
-// can run inside any web page.
+// Plain DOM (no React), so the floating bar can run inside any page.
 
 export function createButton(
   label: string,

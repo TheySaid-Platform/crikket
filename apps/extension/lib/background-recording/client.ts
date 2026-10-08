@@ -8,10 +8,7 @@ interface CommandResponse {
   errorName?: string
 }
 
-/**
- * Asks the background worker to record the tab or the screen without opening
- * a new tab. The thrown error keeps the browser's error name.
- */
+/** The thrown error keeps the browser's error name. */
 export async function requestBackgroundRecording(input: {
   source: VideoSource
   tabId: number

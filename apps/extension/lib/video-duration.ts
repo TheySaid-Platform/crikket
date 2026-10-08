@@ -1,9 +1,5 @@
-/**
- * MediaRecorder files do not store their length, so Chrome reports an
- * infinite duration and refuses to seek in them. Jumping far past the end
- * makes Chrome scan the file once and learn the real length. Calls onReady
- * once seeking works.
- */
+// MediaRecorder files store no length, so Chrome reports Infinity and cannot
+// seek. Seeking far past the end makes it scan the file once.
 export function primeVideoDuration(
   video: HTMLVideoElement,
   onReady: () => void

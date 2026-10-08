@@ -39,7 +39,7 @@ export interface RecordingBar {
   hideMutedWarning: () => void
 }
 
-// Relative heights of the four meter bars, so the meter looks alive.
+// Relative heights of the four meter bars.
 const METER_SHAPE = [0.55, 1, 0.75, 0.4]
 const METER_MAX_PX = 16
 const METER_MIN_PX = 3
@@ -296,8 +296,7 @@ function makeDraggable(bar: HTMLElement): void {
   })
 }
 
-// "You're muted", shown when the user talks into a muted microphone. It stays
-// until they unmute or close it.
+// "You're muted", shown when the user talks into a muted microphone.
 function createMutedToast(actions: {
   onUnmute: () => void
   onDismiss: () => void

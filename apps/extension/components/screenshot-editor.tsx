@@ -61,8 +61,8 @@ function isTallImage(
   return isLongScreenshot || image.height > image.width * TALL_RATIO
 }
 
-// A long screenshot shows at the size it had on the page. Stretched to the
-// editor's width, a narrow panel (like a ClickUp chat) looks zoomed in.
+// A long screenshot shows at its real size: stretched to the editor's width,
+// a narrow panel would look zoomed in.
 function getCanvasStyle(
   isTall: boolean,
   image: ImageBitmap | null,
@@ -75,8 +75,7 @@ function getCanvasStyle(
 
 interface ScreenshotEditorProps {
   sourceBlob: Blob
-  // Image pixels per CSS pixel of the page, so a long screenshot shows at the
-  // size it had on the page. Defaults to the screen's pixel ratio.
+  // Image pixels per page pixel of a long screenshot (default: the screen's).
   pixelRatio?: number
   isLongScreenshot?: boolean
   initialEdits: ScreenshotEdits | null

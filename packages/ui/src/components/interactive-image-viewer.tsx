@@ -37,9 +37,8 @@ const MAX_IMAGE_ZOOM = 4
 const IMAGE_ZOOM_STEP = 0.25
 const DOUBLE_CLICK_ZOOM = 2
 const KEYBOARD_PAN_STEP = 48
-// An image this much taller than the viewer, at the width it is shown, is a
-// long screenshot: it is shown from the top in a box that scrolls, instead of
-// being cut to its middle part.
+// An image this much taller than the viewer at its shown width is a long
+// screenshot: it scrolls from the top instead of showing its middle.
 const LONG_IMAGE_FACTOR = 1.5
 
 function clampValue(value: number, min: number, max: number): number {
@@ -168,9 +167,8 @@ function ZoomBadge({ zoom }: { zoom: number }) {
   )
 }
 
-// A long screenshot (a page captured over several screens), shown from the
-// top in a box that scrolls. At 100% one image pixel takes one screen pixel,
-// so a narrow panel is not stretched; zooming in makes it wider.
+// A long screenshot, scrolling from the top. At 100% one image pixel takes
+// one screen pixel, so a narrow panel is not stretched.
 function TallImageViewer({
   alt,
   src,

@@ -1,9 +1,5 @@
-/**
- * True when Chrome has not asked for the microphone yet. A page only gets to
- * mix the mic with the tab's sound if it was clicked, or if the mic was already
- * allowed when it loaded, so a recording that will trigger the prompt has to
- * start from a click.
- */
+// True before Chrome has asked for the microphone. Mixing the mic with the
+// tab's sound then needs a click, so the recording must start from one.
 export async function isMicrophonePermissionUndecided(): Promise<boolean> {
   try {
     const status = await navigator.permissions.query({

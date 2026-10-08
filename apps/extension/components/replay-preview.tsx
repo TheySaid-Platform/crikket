@@ -1,6 +1,7 @@
 import { ReplayPlayer } from "@crikket/ui/components/replay-player"
 import { cn } from "@crikket/ui/lib/utils"
-import { useMemo } from "react"
+import { type ReactNode, useMemo } from "react"
+import type { ReplayCapture } from "@/hooks/use-replay-capture"
 import {
   INSTANT_REPLAY_CHECKOUT_MS,
   keepLastReplay,
@@ -47,7 +48,31 @@ function getKeepChoices(events: ReplayEvent[]): KeepChoice[] {
 }
 
 /** The saved instant replay, and how much of it to send. */
-export function ReplayPreview({
+/**
+ * The preview of an instant replay of the page, or `otherwise` (the video or
+ * screenshot preview) for any other capture.
+ */
+export function ReplayOrCapturePreview({
+  replay,
+  disabled,
+  otherwise,
+}: {
+  replay: ReplayCapture
+  disabled: boolean
+  otherwise: ReactNode
+}) {
+  if (!(replay.replay && replay.keptEvents)) return otherwise
+  return (
+    <ReplayPreview
+      disabled={disabled}
+      events={replay.replay.events}
+      keptEvents={replay.keptEvents}
+      onKeepChange={replay.setKeepMs}
+    />
+  )
+}
+
+function ReplayPreview({
   events,
   keptEvents,
   disabled,

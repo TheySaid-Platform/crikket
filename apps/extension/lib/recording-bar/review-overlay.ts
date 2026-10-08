@@ -1,15 +1,18 @@
-// Shows the review (trim, blur, title, submit) over the recorded page instead
-// of in a new tab, like Jam. The review is the extension's recorder page in an
-// iframe, so it keeps all of its features and the page cannot reach into it.
+// The review is the extension's own page in an iframe, so the page cannot
+// reach into it.
 
 import { REVIEW_WIDE_QUERY_PARAM } from "@/lib/background-recording/protocol"
 
 const OVERLAY_ID = "crikket-review-overlay"
 
 let previousOverflow: string | null = null
+let shownUrl: string | null = null
 
 export function openReviewOverlay(url: string): void {
+  // Asked again (after a reload check, or from the popup) while it shows.
+  if (shownUrl === url && document.getElementById(OVERLAY_ID)) return
   closeReviewOverlay()
+  shownUrl = url
 
   const host = document.createElement("div")
   host.id = OVERLAY_ID
@@ -34,6 +37,7 @@ export function openReviewOverlay(url: string): void {
 }
 
 export function closeReviewOverlay(): void {
+  shownUrl = null
   const host = document.getElementById(OVERLAY_ID)
   if (!host) return
   host.remove()

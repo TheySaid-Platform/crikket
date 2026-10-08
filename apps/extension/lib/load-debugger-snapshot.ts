@@ -2,14 +2,11 @@ import type { DebuggerSessionSnapshot } from "@crikket/capture-core/debugger/typ
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { getDebuggerSessionSnapshot } from "@/lib/bug-report-debugger/client"
 import { loadLogsBackup } from "@/lib/recording-store"
+import { pickReportSnapshot } from "@/lib/report-snapshot"
+import { delay } from "@/lib/utils"
 
 const LIVE_ATTEMPTS = 3
 const RETRY_DELAY_MS = 400
-
-const delay = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms)
-  })
 
 // The session as the background worker has it now. The worker can be
 // restarting, so a failed request is retried; a null answer is final.
@@ -33,23 +30,8 @@ async function loadLiveSnapshot(
   return null
 }
 
-// Only events up to the stop go in the report. After the stop the live
-// session can still take in network requests, which push its oldest events out
-// of its capped list, so its total count can hide lost events.
-function countReportedEvents(
-  snapshot: DebuggerSessionSnapshot,
-  stoppedAt: number | null
-): number {
-  if (stoppedAt === null) return snapshot.events.length
-  return snapshot.events.filter((event) => event.timestamp <= stoppedAt).length
-}
-
-/**
- * The logs of a capture (actions, console, network). They come from the live
- * session when it is there, and from the copy saved with the capture when the
- * live session was lost or has fewer of the reported events, so a report never
- * goes out without its logs.
- */
+// The live session's logs, or the copy saved at stop if it holds more of the
+// events that go in the report.
 export async function loadDebuggerSnapshot(
   sessionId: string
 ): Promise<DebuggerSessionSnapshot | null> {
@@ -63,14 +45,5 @@ export async function loadDebuggerSnapshot(
       return null
     }),
   ])
-
-  if (live && backup) {
-    const stoppedAt =
-      live.recordingStoppedAt ?? backup.recordingStoppedAt ?? null
-    return countReportedEvents(live, stoppedAt) >=
-      countReportedEvents(backup, stoppedAt)
-      ? live
-      : { ...backup, recordingStoppedAt: stoppedAt }
-  }
-  return live ?? backup
+  return pickReportSnapshot(live, backup)
 }

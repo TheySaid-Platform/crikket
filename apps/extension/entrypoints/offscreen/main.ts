@@ -8,7 +8,6 @@ import {
   type OffscreenResponse,
 } from "@/lib/background-recording/protocol"
 import {
-  discardDebuggerSession,
   markDebuggerRecordingStarted,
   markDebuggerRecordingStopped,
 } from "@/lib/bug-report-debugger/client"
@@ -33,9 +32,8 @@ import { createWebmRecorder } from "@/lib/media-recorder"
 import { createMicLevelMeter, type MicLevelMeter } from "@/lib/mic-level-meter"
 import { saveRecording } from "@/lib/recording-store"
 
-// Records "Record This Tab" and "Record Full Screen" without a visible tab.
 // Offscreen documents only get chrome.runtime, so the background worker does
-// everything else and talks to this page through messages.
+// the rest and talks to this page through messages.
 
 interface ActiveRecording {
   recorder: MediaRecorder
@@ -86,22 +84,9 @@ async function start(request: StartRequest): Promise<OffscreenResponse> {
   }
 
   const { debuggerSessionId } = request
-  let stream: MediaStream
-  try {
-    stream = await openStream(request)
-  } catch (error) {
-    // The popup usually closes while Chrome's screen picker is open, so it
-    // cannot clean up; drop the debugger session here instead.
-    await discardDebuggerSession(debuggerSessionId).catch(
-      (discardError: unknown) => {
-        reportNonFatalError(
-          `Failed to discard debugger session ${debuggerSessionId}`,
-          discardError
-        )
-      }
-    )
-    throw error
-  }
+  // On failure the background decides what happens to the debugger session:
+  // the popup may go on with it in the recorder tab.
+  const stream = await openStream(request)
   const recorder = createWebmRecorder(stream)
   const chunks: Blob[] = []
   recorder.ondataavailable = (event) => {
@@ -125,8 +110,7 @@ async function start(request: StartRequest): Promise<OffscreenResponse> {
     micMeter: micTrack ? createMicLevelMeter(micTrack) : null,
   }
 
-  // The recorded tab was closed or Chrome's "Stop sharing" was clicked:
-  // finish the recording like a normal stop.
+  // The tab closed or "Stop sharing" was clicked: stop as usual.
   stream.getVideoTracks()[0].onended = () => {
     chrome.runtime
       .sendMessage({ type: BACKGROUND_RECORDING_MESSAGE.ended })

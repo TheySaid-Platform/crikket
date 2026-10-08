@@ -2,7 +2,6 @@ import { createButton, createDivider, setLabel } from "./dom"
 import type { LiveDrawTool } from "./draw-layer"
 import { ICONS } from "./icons"
 
-// The Lightshot-style tools for drawing on the page while recording.
 const PALETTE_TOOLS: { id: LiveDrawTool; label: string; icon: string }[] = [
   { id: "pen", label: "Pen", icon: ICONS.pen },
   { id: "line", label: "Line", icon: ICONS.line },

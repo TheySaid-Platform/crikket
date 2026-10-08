@@ -1,6 +1,5 @@
-// Blurs parts of the page while recording, like Jam's blur tool: hover to see
-// what will be blurred, click to blur it, click again to undo. Tab capture
-// records the blurred pixels, so the private content never reaches the video.
+// The blur is a CSS filter on the element, so the video records it blurred. A
+// re-render that replaces the element drops it; the editor's blur covers that.
 
 const BLUR_FILTER = "blur(8px)"
 
@@ -62,9 +61,8 @@ export function createBlurPicker(
     element.style.filter = `${element.style.filter} ${BLUR_FILTER}`.trim()
   }
 
-  // Swallow the page's own handling of clicks while picking. Listening on
-  // window in the capture phase runs before anything on document, including
-  // the repro step recorder, so picking does not show up as clicked steps.
+  // The capture phase on window runs before the page and the repro step
+  // recorder, so picking is not recorded as clicks.
   const onPointerEvent = (event: MouseEvent) => {
     const target = pickTarget(event)
     if (!target) return

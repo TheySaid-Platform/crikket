@@ -4,8 +4,7 @@ type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
 export type Point = [number, number]
 
-// Lightshot-style tools, shared by the screenshot editor, the video editor and
-// the floating bar's live drawing.
+// Shared by the screenshot editor, the video editor and the bar's live drawing.
 export type AnnotationTool =
   | "pen"
   | "line"
@@ -60,10 +59,7 @@ export function fontSizeFor(spaceWidth: number): number {
   return strokeWidthFor(spaceWidth) * 7
 }
 
-/**
- * Starts a shape where the pointer went down. Text and crop do not draw by
- * dragging, so they return null.
- */
+/** Text and crop do not draw by dragging, so they return null. */
 export function startAnnotation(
   tool: AnnotationTool,
   color: string,
@@ -198,10 +194,7 @@ function drawText(
   ctx.fillText(annotation.text, annotation.at[0], annotation.at[1])
 }
 
-/**
- * Draws one annotation. spaceWidth is the width of the image it was drawn on,
- * which sets the stroke and text size.
- */
+/** spaceWidth, the width of the image it was drawn on, sets the stroke. */
 export function drawAnnotation(
   ctx: Context2D,
   annotation: Annotation,

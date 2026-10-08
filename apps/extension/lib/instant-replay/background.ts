@@ -1,5 +1,6 @@
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import {
+  abandonPendingReview,
   backUpLogs,
   closeOffscreenDocument,
   ensureOffscreenDocument,
@@ -319,6 +320,8 @@ export function saveInstantReplay(tabId: number): Promise<void> {
     if (await isRecording()) {
       throw new Error("Finish the recording first.")
     }
+    // Like a new recording or screenshot, this replaces an unsent review.
+    await abandonPendingReview()
 
     const video = await readReplayVideo()
     if (video && (video.source === "display" || video.tabId === tabId)) {

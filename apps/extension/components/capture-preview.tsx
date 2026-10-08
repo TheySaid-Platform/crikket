@@ -154,6 +154,16 @@ function FullPageNote({ fullPage }: { fullPage: FullPageDetails }) {
     )
   }
 
+  if (fullPage.ending === "tab-changed") {
+    return (
+      <p className="flex items-center gap-2 text-sky-700 text-xs">
+        <StopCircle className="h-4 w-4 shrink-0" />
+        You switched tabs, so the capture stopped after {screens}. Scroll the
+        preview to check it.
+      </p>
+    )
+  }
+
   if (fullPage.ending === "stopped") {
     return (
       <p className="flex items-center gap-2 text-sky-700 text-xs">

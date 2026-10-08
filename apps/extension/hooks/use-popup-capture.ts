@@ -5,6 +5,7 @@ import {
   requestBackgroundRecording,
   requestScreenshot,
 } from "@/lib/background-recording/client"
+import { isPickerUnavailableError } from "@/lib/background-recording/protocol"
 import {
   discardDebuggerSession,
   startDebuggerSession,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/capture-context"
 import { INSTANT_REPLAY_MESSAGE } from "@/lib/instant-replay/protocol"
 import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
+import { delay } from "@/lib/utils"
 
 // "video" records the current tab; "display" records the full screen, following
 // the user across tabs.
@@ -212,9 +214,8 @@ async function startVideoCapture(input: {
 
   await chrome.storage.local.remove([RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY])
 
-  // Normally record in the background, with the floating bar on the page and
-  // no extra tab. Chrome only asks for the microphone on a visible page, so the
-  // first recording still uses the recorder tab (see AllowMicrophoneStep).
+  // Chrome only asks for the microphone on a visible page, so the first
+  // recording uses the recorder tab (see AllowMicrophoneStep).
   if (!(await isMicrophonePermissionUndecided())) {
     await chrome.storage.local.set({
       [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
@@ -251,9 +252,8 @@ async function startVideoCapture(input: {
   }
 }
 
-// Records the screen in the background, like Jam: Chrome's screen picker opens
-// over the page and the floating bar follows the user across tabs. Returns
-// false when Chrome would not open the picker that way.
+// Returns false when Chrome would not show the screen picker from the
+// background; other errors are thrown.
 async function startBackgroundDisplayCapture(input: {
   activeTab: ActiveCaptureTab
   debuggerSessionId: string
@@ -269,8 +269,11 @@ async function startBackgroundDisplayCapture(input: {
     if (error instanceof Error && error.name === "NotAllowedError") {
       throw new Error("Screen sharing was cancelled.")
     }
+    if (!(error instanceof Error && isPickerUnavailableError(error.name))) {
+      throw error
+    }
     reportNonFatalError(
-      "Background screen recording failed, using the recorder tab",
+      "Chrome would not show the screen picker here, using the recorder tab",
       error
     )
     return false
@@ -287,8 +290,7 @@ async function startDisplayCapture(input: {
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
   })
 
-  // The first recording needs a visible page for Chrome's microphone prompt,
-  // so it keeps the recorder tab (see ChooseDisplayStep).
+  // The first recording keeps the recorder tab (see ChooseDisplayStep).
   if (
     !(await isMicrophonePermissionUndecided()) &&
     (await startBackgroundDisplayCapture(input))
@@ -329,12 +331,6 @@ async function runCountdown(
   }
 
   setRecordingCountdown(null)
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 }
 
 async function handleCaptureFailure(input: {

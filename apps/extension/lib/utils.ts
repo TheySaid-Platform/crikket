@@ -1,3 +1,8 @@
+export const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, ms))
+  })
+
 /**
  * Get device info for the current browser
  */

@@ -5,9 +5,8 @@ interface AllowMicrophoneStepProps {
   onStart: () => Promise<void>
 }
 
-// Shown only before the first recording. Starting from this click lets Chrome
-// mix the user's voice with the tab's sound; later recordings start on their
-// own once the microphone has been allowed.
+// Only before the first recording: starting from a click lets Chrome mix
+// the microphone with the tab's sound.
 export function AllowMicrophoneStep({ onStart }: AllowMicrophoneStepProps) {
   return (
     <StartPrompt

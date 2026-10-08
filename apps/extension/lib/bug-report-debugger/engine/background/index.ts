@@ -22,10 +22,7 @@ import { registerWebRequestCollector } from "./web-request-collector"
 
 let sessionStore: DebuggerSessionStore | null = null
 
-/**
- * The session store, for other modules of the background worker (messages
- * sent from the worker never reach its own listeners).
- */
+// For other background modules: the worker's own messages never reach it.
 export function getDebuggerSessionStore(): DebuggerSessionStore | null {
   return sessionStore
 }

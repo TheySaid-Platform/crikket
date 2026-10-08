@@ -56,10 +56,7 @@ function moveEdge(side: Side, fraction: number, range: KeptRange): KeptRange {
       }
 }
 
-/**
- * A miniature of a long screenshot with two green handles, like the video trim
- * bar: drag them to keep only the part of the page that matters.
- */
+/** A miniature of a long screenshot whose two handles pick what to keep. */
 export function PageCutStrip({
   imageUrl,
   imageSize,

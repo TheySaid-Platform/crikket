@@ -1,9 +1,7 @@
-// Full-page screenshots, run by the background worker: scroll the page one
-// screen at a time, take a picture of each screen and stitch them into one
-// tall image. It starts at what the user is looking at and goes down, so a
-// long chat or feed is not captured from its very beginning. Web apps such as
-// ClickUp scroll inside a panel rather than the page, so in that case the
-// biggest scrolling panel is captured instead.
+import { delay } from "@/lib/utils"
+
+// Long screenshots. A page that scrolls inside a panel instead of the window
+// gets that panel captured.
 
 interface CaptureFrame {
   x: number
@@ -21,10 +19,19 @@ interface PageLayout {
   viewportWidth: number
 }
 
+// An inline style changed for the capture, and what to put back.
+type Restyle = [
+  element: HTMLElement,
+  property: string,
+  value: string,
+  priority: string,
+]
+
 interface FullPageState {
   target: HTMLElement | null
   originalScroll: number
-  hidden: [HTMLElement, string, string][]
+  isFrozen: boolean
+  restyled: Restyle[]
 }
 
 type FullPageWindow = Window & { __crikketFullPage?: FullPageState }
@@ -34,8 +41,7 @@ const CAPTURE_SPACING_MS = 550
 // Time for the page to repaint (and lazy content to appear) after a scroll.
 const SETTLE_MS = 200
 const MAX_SHOTS = 10
-// Taller canvases fail to export in Chrome, so a taller capture is scaled
-// down to fit.
+// Taller canvases fail to export in Chrome, so a taller capture is scaled down.
 const MAX_IMAGE_PX = 16_000
 
 // The functions below run inside the page through chrome.scripting, so they
@@ -71,7 +77,8 @@ function preparePageForCapture(): PageLayout {
   scope.__crikketFullPage = {
     target,
     originalScroll: startOffset,
-    hidden: [],
+    isFrozen: false,
+    restyled: [],
   }
 
   if (target) {
@@ -106,22 +113,32 @@ function scrollPageTo(top: number): number {
   return window.scrollY
 }
 
-// Fixed and sticky elements (headers, chat widgets) would repeat in every
-// screen, so they are hidden after the first one.
-function hideFloatingElements(): void {
+// Fixed elements would repeat on every screen, so they are hidden after the
+// first one; sticky ones (table headers, dividers) go back into the page.
+function freezeFloatingElements(): void {
   const state = (window as FullPageWindow).__crikketFullPage
-  if (!state || state.hidden.length > 0) return
+  if (!state || state.isFrozen) return
+  state.isFrozen = true
+
+  const restyle = (element: HTMLElement, property: string, value: string) => {
+    state.restyled.push([
+      element,
+      property,
+      element.style.getPropertyValue(property),
+      element.style.getPropertyPriority(property),
+    ])
+    element.style.setProperty(property, value, "important")
+  }
+
   const scope = state.target ?? document.body
   for (const element of scope.querySelectorAll("*")) {
     if (!(element instanceof HTMLElement)) continue
     const { position } = getComputedStyle(element)
-    if (position !== "fixed" && position !== "sticky") continue
-    state.hidden.push([
-      element,
-      element.style.getPropertyValue("visibility"),
-      element.style.getPropertyPriority("visibility"),
-    ])
-    element.style.setProperty("visibility", "hidden", "important")
+    if (position === "fixed") {
+      restyle(element, "visibility", "hidden")
+    } else if (position === "sticky") {
+      restyle(element, "position", "relative")
+    }
   }
 }
 
@@ -129,11 +146,11 @@ function restorePage(): void {
   const scope = window as FullPageWindow
   const state = scope.__crikketFullPage
   if (!state) return
-  for (const [element, value, priority] of state.hidden) {
+  for (const [element, property, value, priority] of state.restyled) {
     if (value) {
-      element.style.setProperty("visibility", value, priority)
+      element.style.setProperty(property, value, priority)
     } else {
-      element.style.removeProperty("visibility")
+      element.style.removeProperty(property)
     }
   }
   if (state.target) {
@@ -158,12 +175,14 @@ async function runInPage<T, Args extends unknown[]>(
   return injection?.result as T
 }
 
-const delay = (ms: number) =>
-  new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
-
 interface Shot {
   offset: number
   image: ImageBitmap
+}
+
+interface CaptureTarget {
+  tabId: number
+  windowId: number
 }
 
 export interface FullPageProgress {
@@ -172,9 +191,9 @@ export interface FullPageProgress {
   screensTotal: number
 }
 
-// How the capture ended: at the bottom of the page, at the size limit of a
-// very long page, or where the user stopped it.
-export type FullPageEnding = "page-end" | "too-long" | "stopped"
+// How the capture ended: at the bottom of the page, at the 10-screen limit,
+// where the user stopped it, or when they switched to another tab.
+export type FullPageEnding = "page-end" | "too-long" | "stopped" | "tab-changed"
 
 export interface FullPageCapture {
   image: Blob
@@ -184,8 +203,6 @@ export interface FullPageCapture {
   scale: number
 }
 
-// One tall image from the screens taken, starting at the first one (origin)
-// and only as tall as they reach, so a capture cut short has no blank strip.
 // Screens are taken at shotScale (device pixels per CSS pixel) and drawn at
 // imageScale, which is smaller when the image would be too tall.
 async function stitchShots(
@@ -218,68 +235,91 @@ async function stitchShots(
   return await canvas.convertToBlob({ type: "image/png" })
 }
 
-// Waits for the page to settle after a scroll, and for Chrome's limit of two
-// captures a second, then takes a picture of the visible tab.
+async function isTabInFront(target: CaptureTarget): Promise<boolean> {
+  const tab = await chrome.tabs.get(target.tabId).catch(() => null)
+  return tab?.active === true && tab.windowId === target.windowId
+}
+
+// captureVisibleTab takes whatever tab is in front, so this returns null
+// once the user switched tabs.
 async function captureScreen(
-  windowId: number,
+  target: CaptureTarget,
   lastCaptureAt: number
-): Promise<ImageBitmap> {
+): Promise<ImageBitmap | null> {
   await delay(
     Math.max(SETTLE_MS, lastCaptureAt + CAPTURE_SPACING_MS - Date.now())
   )
-  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+  if (!(await isTabInFront(target))) {
+    if (lastCaptureAt === 0) {
+      throw new Error("Stay on the page until the long screenshot is done.")
+    }
+    return null
+  }
+  const dataUrl = await chrome.tabs.captureVisibleTab(target.windowId, {
     format: "png",
   })
   return await createImageBitmap(await (await fetch(dataUrl)).blob())
 }
 
-function getEnding(stopped: boolean, reachedEnd: boolean): FullPageEnding {
-  if (stopped) return "stopped"
-  return reachedEnd ? "page-end" : "too-long"
+// Why the capture ends before taking screen number `index`, if it does.
+function getEndingBeforeScreen(
+  index: number,
+  top: number,
+  pageHeight: number,
+  shouldStop?: () => boolean
+): FullPageEnding | null {
+  if (index === 0) return null
+  // The last screen already reached the bottom.
+  if (top >= pageHeight) return "page-end"
+  return shouldStop?.() ? "stopped" : null
 }
 
-export async function captureFullPage(input: {
-  tabId: number
-  windowId: number
-  onProgress?: (progress: FullPageProgress) => void
-  // Checked before each new screen: the user can stop once they have the
-  // part of the page they need.
-  shouldStop?: () => boolean
-}): Promise<FullPageCapture> {
+export async function captureFullPage(
+  input: CaptureTarget & {
+    onProgress?: (progress: FullPageProgress) => void
+    // Checked before each new screen: the user can stop once they have the
+    // part of the page they need.
+    shouldStop?: () => boolean
+  }
+): Promise<FullPageCapture> {
   const layout = await runInPage(input.tabId, preparePageForCapture)
   const shots: Shot[] = []
 
   try {
+    const step = layout.frame.height
+    const pageHeight = layout.scrollHeight
     let lastCaptureAt = 0
     let scale = 1
-    const pageHeight = layout.scrollHeight
-    let reachedEnd = false
-    let stopped = false
-    const step = layout.frame.height
     // Where the first screen landed; the image starts there.
     let origin = layout.startOffset
+    let ending: FullPageEnding = "too-long"
 
     for (let index = 0; index < MAX_SHOTS; index++) {
       const top = layout.startOffset + index * step
-      // The last screen already reached the bottom.
-      if (index > 0 && top >= pageHeight) {
-        reachedEnd = true
+      const endingBefore = getEndingBeforeScreen(
+        index,
+        top,
+        pageHeight,
+        input.shouldStop
+      )
+      if (endingBefore) {
+        ending = endingBefore
         break
       }
-      if (index > 0 && input.shouldStop?.()) {
-        stopped = true
-        break
-      }
-      if (index === 1) await runInPage(input.tabId, hideFloatingElements)
+      if (index === 1) await runInPage(input.tabId, freezeFloatingElements)
 
       const offset = await runInPage(input.tabId, scrollPageTo, top)
       // The page could not scroll any further.
       if (index > 0 && offset === shots.at(-1)?.offset) {
-        reachedEnd = true
+        ending = "page-end"
         break
       }
 
-      const image = await captureScreen(input.windowId, lastCaptureAt)
+      const image = await captureScreen(input, lastCaptureAt)
+      if (!image) {
+        ending = "tab-changed"
+        break
+      }
       lastCaptureAt = Date.now()
 
       if (index === 0) {
@@ -296,7 +336,7 @@ export async function captureFullPage(input: {
       })
       // Scroll positions are rounded to screen pixels.
       if (offset + step >= pageHeight - 1) {
-        reachedEnd = true
+        ending = "page-end"
         break
       }
     }
@@ -315,7 +355,7 @@ export async function captureFullPage(input: {
         capturedHeight
       ),
       screens: shots.length,
-      ending: getEnding(stopped, reachedEnd),
+      ending,
       scale: imageScale,
     }
   } finally {
