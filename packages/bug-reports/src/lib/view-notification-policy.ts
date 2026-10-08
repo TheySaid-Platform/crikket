@@ -4,6 +4,8 @@ const BUG_REPORT_VIEW_NOTIFICATION_BASE_DELAY_MS = 60_000
 const BUG_REPORT_VIEW_NOTIFICATION_MAX_DELAY_MS = 60 * 60 * 1000
 export const BUG_REPORT_VIEW_NOTIFICATION_MAX_ATTEMPTS = 5
 const MAX_VIEWER_NAME_LENGTH = 80
+const MAX_REPORT_TITLE_LENGTH = 120
+const MAX_NOTIFY_ERROR_LENGTH = 2000
 
 /**
  * Signed-out viewers share one key, so a public link opened by many people
@@ -33,7 +35,8 @@ export function describeBugReportViewer(input: {
   viewer: { name: string; email: string } | null
 }): string {
   if (input.viewer) {
-    return `${cleanViewerName(input.viewer.name)} (${input.viewer.email})`
+    const name = toSingleLine(input.viewer.name, MAX_VIEWER_NAME_LENGTH)
+    return name ? `${name} (${input.viewer.email})` : input.viewer.email
   }
 
   return input.viewerKey === ANONYMOUS_VIEWER_KEY
@@ -41,11 +44,23 @@ export function describeBugReportViewer(input: {
     : "A former Crikket user"
 }
 
-// The name is set by the viewer and lands in the email subject, so keep it
-// to one short line.
-function cleanViewerName(name: string): string {
-  const singleLine = name.replace(/[\p{Cc}\p{Cf}]+/gu, " ").trim()
-  return singleLine.length > MAX_VIEWER_NAME_LENGTH
-    ? `${singleLine.slice(0, MAX_VIEWER_NAME_LENGTH - 1)}…`
+export function describeBugReportTitle(title: string | null): string {
+  return (
+    toSingleLine(title ?? "", MAX_REPORT_TITLE_LENGTH) || "Untitled bug report"
+  )
+}
+
+export function truncateBugReportViewNotifyError(message: string): string {
+  return message.slice(0, MAX_NOTIFY_ERROR_LENGTH)
+}
+
+// Names and titles land in the email subject, so keep them to one short line.
+function toSingleLine(text: string, maxLength: number): string {
+  const singleLine = text
+    .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  return singleLine.length > maxLength
+    ? `${singleLine.slice(0, maxLength - 1)}…`
     : singleLine
 }

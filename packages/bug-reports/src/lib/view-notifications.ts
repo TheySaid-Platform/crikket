@@ -6,7 +6,9 @@ import { and, asc, eq, isNull, lt, lte, sql } from "drizzle-orm"
 import {
   BUG_REPORT_VIEW_NOTIFICATION_MAX_ATTEMPTS,
   calculateBugReportViewNotificationRetryDelayMs,
+  describeBugReportTitle,
   describeBugReportViewer,
+  truncateBugReportViewNotifyError,
 } from "./view-notification-policy"
 
 const BUG_REPORT_VIEW_NOTIFICATION_DEFAULT_BATCH = 20
@@ -95,17 +97,22 @@ async function processBugReportViewNotification(
     await sendBugReportViewedEmail({
       email: reporter.email,
       reportId: view.bugReport.id,
-      reportTitle: view.bugReport.title?.trim() || "Untitled bug report",
+      reportTitle: describeBugReportTitle(view.bugReport.title),
       viewerDescription: describeBugReportViewer({
         viewerKey: view.viewerKey,
         viewer: view.viewer,
       }),
     })
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(
+      `[bug-report-view-notification] send failed for view ${viewId} (attempt ${claimed.attempts} of ${BUG_REPORT_VIEW_NOTIFICATION_MAX_ATTEMPTS})`,
+      message
+    )
     await db
       .update(bugReportView)
       .set({
-        lastNotifyError: error instanceof Error ? error.message : String(error),
+        lastNotifyError: truncateBugReportViewNotifyError(message),
         nextNotifyAttemptAt: new Date(
           Date.now() +
             calculateBugReportViewNotificationRetryDelayMs(claimed.attempts)

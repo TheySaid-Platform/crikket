@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import {
   ANONYMOUS_VIEWER_KEY,
   calculateBugReportViewNotificationRetryDelayMs,
+  describeBugReportTitle,
   describeBugReportViewer,
   getBugReportViewerKey,
   shouldRecordBugReportView,
@@ -60,6 +61,24 @@ describe("bug report view notification policy", () => {
     expect(description.startsWith("Ada Bcc: x y")).toBeTrue()
     expect(description.endsWith("… (a@x.io)")).toBeTrue()
     expect(description.length).toBe(80 + " (a@x.io)".length)
+  })
+
+  it("falls back to the email when the name is empty", () => {
+    expect(
+      describeBugReportViewer({
+        viewerKey: "user:b",
+        viewer: { name: " \n ", email: "ada@theysaid.io" },
+      })
+    ).toBe("ada@theysaid.io")
+  })
+
+  it("keeps the report title to one short line", () => {
+    expect(describeBugReportTitle("Login\r\nbroken  again")).toBe(
+      "Login broken again"
+    )
+    expect(describeBugReportTitle("x".repeat(300)).length).toBe(120)
+    expect(describeBugReportTitle("   ")).toBe("Untitled bug report")
+    expect(describeBugReportTitle(null)).toBe("Untitled bug report")
   })
 
   it("describes signed-out and deleted viewers", () => {
