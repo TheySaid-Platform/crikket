@@ -30,6 +30,8 @@ interface PopupCaptureActionsProps {
   recordingCountdown: number | null
   recordingDurationMs: number
   pendingCaptureType: PopupCaptureType | null
+  // A new capture replaces the report that was not sent yet.
+  hasUnsentReport: boolean
   // Set while a full-page screenshot is being taken.
   fullPageProgress: FullPageProgress | null
   startRecordingShortcut: string | null
@@ -108,6 +110,7 @@ export function PopupCaptureActions({
   recordingCountdown,
   recordingDurationMs,
   pendingCaptureType,
+  hasUnsentReport,
   fullPageProgress,
   startRecordingShortcut,
   startScreenshotShortcut,
@@ -186,6 +189,7 @@ export function PopupCaptureActions({
       {pendingCaptureType ? (
         <PendingCapturePanel
           captureType={pendingCaptureType}
+          hasUnsentReport={hasUnsentReport}
           isBusy={isBusy}
           onCancel={onClearPendingCapture}
           onContinue={() => onStartCapture(pendingCaptureType)}
@@ -197,11 +201,13 @@ export function PopupCaptureActions({
 
 function PendingCapturePanel({
   captureType,
+  hasUnsentReport,
   isBusy,
   onContinue,
   onCancel,
 }: {
   captureType: PopupCaptureType
+  hasUnsentReport: boolean
   isBusy: boolean
   onContinue: () => void
   onCancel: () => void
@@ -211,6 +217,11 @@ function PendingCapturePanel({
       <p className="text-foreground/80 text-xs leading-relaxed">
         {PENDING_MESSAGES[captureType]}
       </p>
+      {hasUnsentReport ? (
+        <p className="font-medium text-amber-900 text-xs leading-relaxed">
+          Your unsent report will be deleted when this one starts.
+        </p>
+      ) : null}
       <div className="flex gap-2">
         <Button
           className={cn("flex-1", BRAND_BUTTON_CLASS)}

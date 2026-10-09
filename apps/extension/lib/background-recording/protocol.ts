@@ -1,8 +1,9 @@
+import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
 import type { MicState } from "@/hooks/use-screen-capture"
 import type { VideoSource } from "@/lib/capture-context"
 
-// The background worker owns the recording state; the popup and the floating
-// bar read it from storage and send it commands.
+// The background worker owns the recording state; the popup reads it from
+// storage, the floating bar gets it in messages, and both send it commands.
 
 export const BACKGROUND_RECORDING_STORAGE_KEY = "backgroundRecording"
 // The long screenshot's progress, so a popup opened again can show it.
@@ -49,12 +50,16 @@ export const BACKGROUND_RECORDING_MESSAGE = {
   dismissMutedWarning: "crikket:recording:dismiss-muted-warning",
   // Asks a page whether its floating bar is already running.
   barPing: "crikket:recording-bar:ping",
+  // The recording state, sent to the floating bars when it changes.
+  barState: "crikket:recording-bar:state",
   // A screenshot (visible area or long), reviewed over the page.
   screenshot: "crikket:screenshot:capture",
   // Stops a long screenshot and keeps what was captured so far.
   screenshotStop: "crikket:screenshot:stop",
   openReview: "crikket:review:open",
   closeReview: "crikket:review:close",
+  // Hides an unsent review while a new capture starts, or shows it again.
+  hideReview: "crikket:review:hide",
   // From the popup: brings back the review that is not sent yet.
   reopenReview: "crikket:review:reopen",
   // From the review: its report was sent or dropped.
@@ -90,6 +95,28 @@ export type OffscreenResponse =
 // the popup fall back to the recorder tab; any other error is shown.
 export function isPickerUnavailableError(errorName: string | undefined) {
   return errorName === "NotSupportedError" || errorName === "InvalidStateError"
+}
+
+// Chrome says "by system" when the operating system blocked the capture.
+const BLOCKED_BY_SYSTEM = /by system/i
+
+// The user closed the screen picker.
+export function isUserCancelError(
+  errorName: string | undefined,
+  message: string
+) {
+  return errorName === "NotAllowedError" && !BLOCKED_BY_SYSTEM.test(message)
+}
+
+/** The capture a review page shows, or null if url is not a review. */
+export function readReviewSessionId(
+  url: string | undefined,
+  recorderPageUrl: string
+): string | null {
+  if (!url?.startsWith(recorderPageUrl)) return null
+  const search = new URL(url).search
+  if (!new URLSearchParams(search).has(REVIEW_QUERY_PARAM)) return null
+  return readDebuggerSessionIdFromSearch(search)
 }
 
 export const REVIEW_QUERY_PARAM = "review"

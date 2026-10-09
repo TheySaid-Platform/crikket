@@ -26,6 +26,7 @@ import {
   renderScreenshot,
   type ScreenshotEdits,
 } from "@/lib/screenshot-annotations"
+import { clamp } from "@/lib/utils"
 
 const SCREENSHOT_TOOLS: AnnotationTool[] = [
   "pen",
@@ -123,12 +124,15 @@ export function ScreenshotEditor({
     }
   }, [sourceBlob])
 
+  // Clamped: a drag past the edge would make a crop bigger than the image.
   const toImagePoint = (event: PointerEvent<HTMLElement>): Point => {
     const box = event.currentTarget.getBoundingClientRect()
     const canvas = canvasRef.current
     return [
-      ((event.clientX - box.left) / box.width) * (canvas?.width ?? 0),
-      ((event.clientY - box.top) / box.height) * (canvas?.height ?? 0),
+      clamp((event.clientX - box.left) / box.width, 0, 1) *
+        (canvas?.width ?? 0),
+      clamp((event.clientY - box.top) / box.height, 0, 1) *
+        (canvas?.height ?? 0),
     ]
   }
 

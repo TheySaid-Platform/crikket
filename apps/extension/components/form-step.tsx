@@ -16,8 +16,9 @@ import { Textarea } from "@crikket/ui/components/ui/textarea"
 import { cn } from "@crikket/ui/lib/utils"
 import { useForm } from "@tanstack/react-form"
 import { AlertTriangle, Globe, MousePointerClick, Terminal } from "lucide-react"
-import { type ReactNode, useEffect, useRef } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import * as z from "zod"
+import { DiscardConfirm } from "@/components/close-review-button"
 import { BRAND_BUTTON_CLASS } from "@/lib/brand"
 
 const priorityValues = Object.values(PRIORITY_OPTIONS) as [
@@ -42,6 +43,8 @@ interface DebuggerSummary {
 interface FormStepProps {
   // The capture with its trim bar or edit button, shown above the form.
   preview: ReactNode
+  // What is being reported, for the discard question: "recording" or "screenshot".
+  captureLabel: string
   initialTitle: string
   isSubmitting: boolean
   submitError: string | null
@@ -63,6 +66,7 @@ interface FormValues {
 
 export function FormStep({
   preview,
+  captureLabel,
   initialTitle,
   isSubmitting,
   submitError,
@@ -71,6 +75,7 @@ export function FormStep({
   onSubmit,
   onCancel,
 }: FormStepProps) {
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false)
   const defaultValues: FormValues = {
     title: initialTitle,
     description: "",
@@ -230,7 +235,7 @@ export function FormStep({
           </div>
         ) : null}
 
-        <div className="mt-auto flex flex-col gap-2 pt-1">
+        <div className="relative mt-auto flex flex-col gap-2 pt-1">
           <Button
             className={cn("w-full", BRAND_BUTTON_CLASS)}
             disabled={isBusy}
@@ -242,15 +247,23 @@ export function FormStep({
           <Button
             className="w-full text-muted-foreground"
             disabled={isBusy}
-            onClick={() => {
-              form.reset()
-              onCancel()
-            }}
+            onClick={() => setIsConfirmingCancel(true)}
             type="button"
             variant="ghost"
           >
             Cancel
           </Button>
+          {isConfirmingCancel ? (
+            <DiscardConfirm
+              captureLabel={captureLabel}
+              className="right-0 bottom-full left-0 mx-auto mb-2"
+              onDiscard={() => {
+                form.reset()
+                onCancel()
+              }}
+              onKeep={() => setIsConfirmingCancel(false)}
+            />
+          ) : null}
         </div>
       </form>
     </div>

@@ -912,8 +912,9 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       tabUrls.set(tab.id, tab.url)
     }
 
+    // After Stop the report keeps the page as it was captured.
     const trackedSession = sessionsById.get(tabToSession.get(tab.id) ?? "")
-    if (trackedSession) {
+    if (trackedSession && trackedSession.recordingStoppedAt === null) {
       updateSessionTabInfo(trackedSession, tab)
     }
 

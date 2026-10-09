@@ -3,6 +3,8 @@ import {
   type BackgroundRecordingState,
   getRecordedMs,
   isPickerUnavailableError,
+  isUserCancelError,
+  readReviewSessionId,
 } from "./protocol"
 
 const recording = (
@@ -39,5 +41,41 @@ describe("isPickerUnavailableError", () => {
     expect(isPickerUnavailableError("NotAllowedError")).toBe(false)
     expect(isPickerUnavailableError("NotReadableError")).toBe(false)
     expect(isPickerUnavailableError(undefined)).toBe(false)
+  })
+})
+
+describe("isUserCancelError", () => {
+  it("is quiet when the user closed the screen picker", () => {
+    expect(isUserCancelError("NotAllowedError", "Permission denied")).toBe(true)
+  })
+
+  it("reports a block by the operating system and other errors", () => {
+    expect(
+      isUserCancelError("NotAllowedError", "Permission denied by system")
+    ).toBe(false)
+    expect(isUserCancelError("NotReadableError", "Could not start")).toBe(false)
+  })
+})
+
+describe("readReviewSessionId", () => {
+  const recorder = "chrome-extension://abc/recorder.html"
+
+  it("reads the capture of a review page", () => {
+    expect(
+      readReviewSessionId(
+        `${recorder}?captureType=video&debuggerSessionId=s1&review=1`,
+        recorder
+      )
+    ).toBe("s1")
+  })
+
+  it("ignores the recorder page when it is not a review, and other pages", () => {
+    expect(
+      readReviewSessionId(`${recorder}?debuggerSessionId=s1`, recorder)
+    ).toBeNull()
+    expect(
+      readReviewSessionId("https://example.com/?review=1", recorder)
+    ).toBeNull()
+    expect(readReviewSessionId(undefined, recorder)).toBeNull()
   })
 })

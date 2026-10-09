@@ -1,59 +1,25 @@
 import { GripHorizontal } from "lucide-react"
 import { type KeyboardEvent, type PointerEvent, useRef } from "react"
+import {
+  type CutSide,
+  moveEdge,
+  toCrop,
+  toKeptRange,
+} from "@/lib/page-cut-range"
 import type { PixelRect } from "@/lib/pixelate"
 
-// The kept part of the page, as fractions (0 to 1) of its height.
-interface KeptRange {
-  top: number
-  bottom: number
-}
-
-type Side = "top" | "bottom"
-
-const MIN_KEPT_FRACTION = 0.03
 const KEY_STEP = 0.01
-const FULL_RANGE: KeptRange = { top: 0, bottom: 1 }
 
 interface PageCutStripProps {
   imageUrl: string
   imageSize: { width: number; height: number }
-  // The current crop; a full-width crop shows as the kept range.
+  // The current crop; its top and bottom show as the kept range.
   crop: PixelRect | null
   // While a handle moves: the crop it would make (null keeps everything).
   onPreview: (crop: PixelRect | null) => void
   onCommit: (crop: PixelRect | null) => void
   // Brings that point of the page (0 to 1) into view in the editor.
   onScrollTo: (fraction: number) => void
-}
-
-function toRange(crop: PixelRect | null, height: number): KeptRange {
-  if (!crop || crop.x > 0.5 || height === 0) return FULL_RANGE
-  return { top: crop.y / height, bottom: (crop.y + crop.height) / height }
-}
-
-function toCrop(
-  range: KeptRange,
-  size: { width: number; height: number }
-): PixelRect | null {
-  if (range.top <= 0.001 && range.bottom >= 0.999) return null
-  return {
-    x: 0,
-    y: range.top * size.height,
-    width: size.width,
-    height: (range.bottom - range.top) * size.height,
-  }
-}
-
-function moveEdge(side: Side, fraction: number, range: KeptRange): KeptRange {
-  return side === "top"
-    ? {
-        top: Math.max(0, Math.min(fraction, range.bottom - MIN_KEPT_FRACTION)),
-        bottom: range.bottom,
-      }
-    : {
-        top: range.top,
-        bottom: Math.min(1, Math.max(fraction, range.top + MIN_KEPT_FRACTION)),
-      }
 }
 
 /** A miniature of a long screenshot whose two handles pick what to keep. */
@@ -66,7 +32,7 @@ export function PageCutStrip({
   onScrollTo,
 }: PageCutStripProps) {
   const stripRef = useRef<HTMLDivElement | null>(null)
-  const range = toRange(crop, imageSize.height)
+  const range = toKeptRange(crop, imageSize.height)
 
   const fractionAt = (clientY: number): number => {
     const box = stripRef.current?.getBoundingClientRect()
@@ -75,7 +41,7 @@ export function PageCutStrip({
   }
 
   const startDrag =
-    (side: Side) => (event: PointerEvent<HTMLButtonElement>) => {
+    (side: CutSide) => (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault()
       const handle = event.currentTarget
       handle.setPointerCapture(event.pointerId)
@@ -83,28 +49,29 @@ export function PageCutStrip({
 
       const onMove = (moveEvent: globalThis.PointerEvent) => {
         latest = moveEdge(side, fractionAt(moveEvent.clientY), latest)
-        onPreview(toCrop(latest, imageSize))
+        onPreview(toCrop(latest, imageSize, crop))
         onScrollTo(side === "top" ? latest.top : latest.bottom)
       }
       const onUp = () => {
         handle.removeEventListener("pointermove", onMove)
         handle.removeEventListener("pointerup", onUp)
         handle.removeEventListener("pointercancel", onUp)
-        onCommit(toCrop(latest, imageSize))
+        onCommit(toCrop(latest, imageSize, crop))
       }
       handle.addEventListener("pointermove", onMove)
       handle.addEventListener("pointerup", onUp)
       handle.addEventListener("pointercancel", onUp)
     }
 
-  const nudge = (side: Side) => (event: KeyboardEvent<HTMLButtonElement>) => {
-    const step = { ArrowUp: -KEY_STEP, ArrowDown: KEY_STEP }[event.key] ?? 0
-    if (step === 0) return
-    event.preventDefault()
-    const next = moveEdge(side, range[side] + step, range)
-    onScrollTo(next[side])
-    onCommit(toCrop(next, imageSize))
-  }
+  const nudge =
+    (side: CutSide) => (event: KeyboardEvent<HTMLButtonElement>) => {
+      const step = { ArrowUp: -KEY_STEP, ArrowDown: KEY_STEP }[event.key] ?? 0
+      if (step === 0) return
+      event.preventDefault()
+      const next = moveEdge(side, range[side] + step, range)
+      onScrollTo(next[side])
+      onCommit(toCrop(next, imageSize, crop))
+    }
 
   return (
     <div className="flex h-full w-[92px] shrink-0 flex-col gap-2">

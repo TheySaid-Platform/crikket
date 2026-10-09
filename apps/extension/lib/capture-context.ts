@@ -1,3 +1,5 @@
+import { RECORDING_ERROR_STORAGE_KEY } from "@/lib/background-recording/protocol"
+
 export type CaptureContext = { title?: string; url?: string }
 
 // "tab" records one tab with tabCapture; "display" records the full screen, so
@@ -83,17 +85,23 @@ export const readAndClearCaptureTabId = async (): Promise<number | null> => {
 const RECORDING_BADGES = {
   recording: { text: "REC", color: "#dc2626" },
   paused: { text: "II", color: "#d97706" },
+  // A capture failed; stays until the popup has shown why.
+  error: { text: "!", color: "#dc2626" },
 } as const
 
 export const setRecordingBadge = async (
-  status: keyof typeof RECORDING_BADGES | null
+  status: "recording" | "paused" | null
 ): Promise<void> => {
-  if (!status) {
+  const stored = status
+    ? {}
+    : await chrome.storage.local.get(RECORDING_ERROR_STORAGE_KEY)
+  const shown = status ?? (stored[RECORDING_ERROR_STORAGE_KEY] ? "error" : null)
+  if (!shown) {
     await chrome.action.setBadgeText({ text: "" })
     return
   }
 
-  const badge = RECORDING_BADGES[status]
+  const badge = RECORDING_BADGES[shown]
   await chrome.action.setBadgeBackgroundColor({ color: badge.color })
   await chrome.action.setBadgeText({ text: badge.text })
 }

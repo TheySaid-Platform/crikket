@@ -94,6 +94,7 @@ function App() {
       <PopupCaptureActions
         fullPageProgress={fullPageProgress}
         hasFloatingBar={backgroundRecording !== null}
+        hasUnsentReport={showUnsentReport}
         isBusy={isBusy}
         isRecordingInProgress={isRecording}
         isRecordingPaused={isPaused}

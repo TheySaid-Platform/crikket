@@ -2,7 +2,10 @@ import type {
   DebuggerSessionSnapshot,
   RecordingPause,
 } from "@crikket/capture-core/debugger/types"
+import type { CaptureContext } from "@/lib/capture-context"
 import type { FullPageEnding } from "@/lib/full-page-screenshot"
+import type { ScreenshotEdits } from "@/lib/screenshot-annotations"
+import type { VideoEdits } from "@/lib/video-edit"
 
 // Too large for chrome.storage. The offscreen recorder and the review share
 // this database because they run on the same origin.
@@ -106,8 +109,24 @@ export async function loadScreenshot(
   }
 }
 
+// Kept next to a capture under its session id plus one of these.
 const LOGS_SUFFIX = ":logs"
-const logsBackupKey = (sessionId: string) => `${sessionId}${LOGS_SUFFIX}`
+const EDITS_SUFFIX = ":edits"
+const CONTEXT_SUFFIX = ":context"
+const EXTRA_SUFFIXES = [LOGS_SUFFIX, EDITS_SUFFIX, CONTEXT_SUFFIX]
+
+function putExtra(sessionId: string, suffix: string, value: unknown) {
+  return runTransaction("readwrite", (store) =>
+    store.put(value, `${sessionId}${suffix}`)
+  )
+}
+
+async function getExtra<T>(sessionId: string, suffix: string) {
+  const value = await runTransaction<T>("readonly", (store) =>
+    store.get(`${sessionId}${suffix}`)
+  )
+  return value ?? null
+}
 
 // A copy of the capture's logs, in case the worker loses the live session.
 // Saved after the capture, because saving a capture clears the store.
@@ -115,41 +134,75 @@ export async function saveLogsBackup(
   sessionId: string,
   snapshot: DebuggerSessionSnapshot
 ): Promise<void> {
-  await runTransaction("readwrite", (store) =>
-    store.put(snapshot, logsBackupKey(sessionId))
-  )
+  await putExtra(sessionId, LOGS_SUFFIX, snapshot)
 }
 
-export async function loadLogsBackup(
+export function loadLogsBackup(
   sessionId: string
 ): Promise<DebuggerSessionSnapshot | null> {
-  const snapshot = await runTransaction<DebuggerSessionSnapshot>(
-    "readonly",
-    (store) => store.get(logsBackupKey(sessionId))
-  )
-  return snapshot ?? null
+  return getExtra<DebuggerSessionSnapshot>(sessionId, LOGS_SUFFIX)
 }
 
-/** The debugger session ids that have a capture or a logs copy stored. */
+/** The edits made in a review, so a review opened again keeps them. */
+export interface SavedCaptureEdits {
+  videoEdits: VideoEdits | null
+  screenshotEdits: ScreenshotEdits | null
+  editedScreenshot: Blob | null
+}
+
+export async function saveCaptureEdits(
+  sessionId: string,
+  edits: SavedCaptureEdits | null
+): Promise<void> {
+  const key = `${sessionId}${EDITS_SUFFIX}`
+  await runTransaction("readwrite", (store) => {
+    if (edits) store.put(edits, key)
+    else store.delete(key)
+    return undefined
+  })
+}
+
+export function loadCaptureEdits(
+  sessionId: string
+): Promise<SavedCaptureEdits | null> {
+  return getExtra<SavedCaptureEdits>(sessionId, EDITS_SUFFIX)
+}
+
+// The page the capture was taken on. The review reads it once from
+// chrome.storage, so a review opened again finds it here.
+export async function saveCaptureContext(
+  sessionId: string,
+  context: CaptureContext
+): Promise<void> {
+  await putExtra(sessionId, CONTEXT_SUFFIX, context)
+}
+
+export function loadCaptureContext(
+  sessionId: string
+): Promise<CaptureContext | null> {
+  return getExtra<CaptureContext>(sessionId, CONTEXT_SUFFIX)
+}
+
+/** The debugger session ids that have anything stored. */
 export async function listStoredCaptureIds(): Promise<string[]> {
   const keys = await runTransaction<IDBValidKey[]>("readonly", (store) =>
     store.getAllKeys()
   )
   const ids = new Set<string>()
   for (const key of keys ?? []) {
-    if (typeof key === "string") {
-      ids.add(
-        key.endsWith(LOGS_SUFFIX) ? key.slice(0, -LOGS_SUFFIX.length) : key
-      )
-    }
+    if (typeof key !== "string") continue
+    const suffix = EXTRA_SUFFIXES.find((extra) => key.endsWith(extra))
+    ids.add(suffix ? key.slice(0, -suffix.length) : key)
   }
   return [...ids]
 }
 
-/** Removes a stored capture and its logs once its report is sent or dropped. */
+/** Removes a capture and all kept with it once its report is sent or dropped. */
 export async function deleteRecording(sessionId: string): Promise<void> {
   await runTransaction("readwrite", (store) => {
-    store.delete(logsBackupKey(sessionId))
+    for (const suffix of EXTRA_SUFFIXES) {
+      store.delete(`${sessionId}${suffix}`)
+    }
     return store.delete(sessionId)
   })
 }

@@ -18,12 +18,15 @@ import {
   saveLogsBackup,
   saveScreenshot,
 } from "@/lib/recording-store"
+import { delay } from "@/lib/utils"
+import { planStartupCleanup } from "./capture-cleanup"
 import {
   BACKGROUND_RECORDING_MESSAGE,
   BACKGROUND_RECORDING_STORAGE_KEY,
   type BackgroundRecordingState,
   FULL_PAGE_CAPTURE_STORAGE_KEY,
   isPickerUnavailableError,
+  isUserCancelError,
   OFFSCREEN_MESSAGE_TARGET,
   type OffscreenRequest,
   type OffscreenResponse,
@@ -32,11 +35,15 @@ import {
   RECORDING_ERROR_STORAGE_KEY,
   REVIEW_QUERY_PARAM,
   REVIEW_WIDE_QUERY_PARAM,
+  readReviewSessionId,
 } from "./protocol"
 
 const OFFSCREEN_DOCUMENT_PATH = "/offscreen.html"
 // The floating bar and the review overlay, injected only where needed.
-const PAGE_SCRIPT = "/content-scripts/recording-bar.js"
+const PAGE_SCRIPT = "content-scripts/recording-bar.js"
+// While recording, the same script runs from document_start on pages that load.
+const BAR_SCRIPT_ID = "crikket-recording-bar"
+const RECORDER_PAGE_PATH = "/recorder.html"
 // Sent by the popup's Stop button and the stop hotkey for every recording.
 const STOP_FROM_POPUP_MESSAGE_TYPE = "STOP_RECORDING_FROM_POPUP"
 
@@ -69,6 +76,9 @@ export async function readBackgroundRecording(): Promise<BackgroundRecordingStat
 
 // The long screenshot progress badge.
 const BADGE_COLOR = "#f43f5e"
+// Time for a page to repaint after the old review is hidden.
+const REPAINT_MS = 150
+const STARTUP_CLEANUP_DELAY_MS = 5000
 
 // The floating bar cannot show everywhere (chrome:// pages, other apps), so
 // the toolbar icon shows the recording state too.
@@ -97,16 +107,61 @@ async function syncDebuggerPause(
     })
 }
 
+// Sent rather than read from chrome.storage.onChanged, which would also hand
+// every bar each write of the debugger sessions.
+async function sendBarState(
+  state: BackgroundRecordingState | null
+): Promise<void> {
+  const tabs = await chrome.tabs.query({})
+  await Promise.all(
+    tabs.map((tab) =>
+      typeof tab.id === "number"
+        ? chrome.tabs
+            .sendMessage(tab.id, {
+              type: BACKGROUND_RECORDING_MESSAGE.barState,
+              state,
+            })
+            .catch(() => undefined)
+        : undefined
+    )
+  )
+}
+
+async function registerBarScript(): Promise<void> {
+  const registered = await chrome.scripting.getRegisteredContentScripts({
+    ids: [BAR_SCRIPT_ID],
+  })
+  if (registered.length > 0) return
+  await chrome.scripting.registerContentScripts([
+    {
+      id: BAR_SCRIPT_ID,
+      js: [PAGE_SCRIPT],
+      matches: ["<all_urls>"],
+      runAt: "document_start",
+      persistAcrossSessions: false,
+    },
+  ])
+}
+
+async function unregisterBarScript(): Promise<void> {
+  await chrome.scripting
+    .unregisterContentScripts({ ids: [BAR_SCRIPT_ID] })
+    .catch(() => undefined)
+}
+
 async function writeBackgroundRecording(
   state: BackgroundRecordingState
 ): Promise<void> {
   await chrome.storage.local.set({ [BACKGROUND_RECORDING_STORAGE_KEY]: state })
   await showRecordingBadge(state)
+  await sendBarState(state)
 }
 
 async function clearBackgroundRecording(): Promise<void> {
   await chrome.storage.local.remove(BACKGROUND_RECORDING_STORAGE_KEY)
   await showRecordingBadge(null)
+  await unregisterBarScript()
+  await sendBarState(null)
 }
 
 async function hasOffscreenDocument(): Promise<boolean> {
@@ -198,7 +253,9 @@ async function abandonCapture(sessionId: string): Promise<void> {
 // state stays in storage: forget that recording so the user can start over.
 async function clearStaleBackgroundRecording(): Promise<void> {
   const state = await readBackgroundRecording()
-  if (state && !(await hasOffscreenDocument())) {
+  if (!state) {
+    await unregisterBarScript()
+  } else if (!(await hasOffscreenDocument())) {
     await clearBackgroundRecording()
     await abandonCapture(state.debuggerSessionId)
   }
@@ -285,7 +342,21 @@ async function buildOffscreenStart(
   }
 }
 
-// A new capture replaces a review that was never sent.
+// While a new capture starts, an unsent review over the page is hidden so it
+// is not captured. True if there was one to hide or show.
+async function setPendingReviewHidden(hidden: boolean): Promise<boolean> {
+  const pending = await readPendingReview()
+  if (!pending?.isOverlay) return false
+  await chrome.tabs
+    .sendMessage(pending.tabId, {
+      type: BACKGROUND_RECORDING_MESSAGE.hideReview,
+      hidden,
+    })
+    .catch(() => undefined)
+  return true
+}
+
+// A new capture that worked replaces the review that was never sent.
 async function abandonPendingReview(): Promise<void> {
   const pending = await readPendingReview()
   if (!pending) return
@@ -296,6 +367,8 @@ async function abandonPendingReview(): Promise<void> {
         type: BACKGROUND_RECORDING_MESSAGE.closeReview,
       })
       .catch(() => undefined)
+  } else {
+    await chrome.tabs.remove(pending.tabId).catch(() => undefined)
   }
 }
 
@@ -307,21 +380,16 @@ export function startBackgroundRecording(
     if (await readBackgroundRecording()) {
       throw new Error("A recording is already in progress.")
     }
-    await abandonPendingReview()
 
     await keepDebuggerSession(input.debuggerSessionId)
     const request = await buildOffscreenStart(input)
     await ensureOffscreenDocument()
+    await setPendingReviewHidden(true)
     const response = await sendToOffscreen(request)
     if (!response.ok) {
-      await closeOffscreenDocument()
-      // The popup goes on with this session only if the picker could not show;
-      // otherwise it has usually closed, so the session is dropped here.
-      if (!isPickerUnavailableError(response.errorName)) {
-        await discardDebuggerSession(input.debuggerSessionId)
-      }
-      throw new RecordingStartError(response.error, response.errorName)
+      return handleStartFailure(input.debuggerSessionId, response)
     }
+    await abandonPendingReview()
 
     await writeBackgroundRecording({
       source: input.source,
@@ -333,14 +401,40 @@ export function startBackgroundRecording(
       micState: response.micState ?? "unavailable",
     })
 
+    await registerBarScript()
     await ensurePageScript(input.tabId)
     if (input.source === "display") {
-      const activeTabId = await getActiveTabId()
-      if (activeTabId !== null && activeTabId !== input.tabId) {
-        await ensurePageScript(activeTabId)
-      }
+      await showBarInFrontTabs()
     }
   })
+}
+
+async function handleStartFailure(
+  sessionId: string,
+  response: Extract<OffscreenResponse, { ok: false }>
+): Promise<never> {
+  await closeOffscreenDocument()
+  await setPendingReviewHidden(false)
+  // The popup goes on with this session only if the picker could not show;
+  // otherwise it has usually closed, so the session is dropped here.
+  if (!isPickerUnavailableError(response.errorName)) {
+    await discardDebuggerSession(sessionId)
+    if (!isUserCancelError(response.errorName, response.error)) {
+      await reportErrorIfPopupClosed(
+        `Your recording could not start: ${response.error}`
+      )
+    }
+  }
+  throw new RecordingStartError(response.error, response.errorName)
+}
+
+// The tab in front of every window, also of windows that are not focused.
+async function showBarInFrontTabs(): Promise<void> {
+  for (const tab of await chrome.tabs.query({ active: true })) {
+    if (typeof tab.id === "number") {
+      await ensurePageScript(tab.id)
+    }
+  }
 }
 
 async function markDebuggerSessionStopped(sessionId: string): Promise<void> {
@@ -362,6 +456,17 @@ async function reportRecordingError(message: string): Promise<void> {
   await chrome.storage.local.set({ [RECORDING_ERROR_STORAGE_KEY]: message })
   await chrome.action.setBadgeBackgroundColor({ color: "#dc2626" })
   await chrome.action.setBadgeText({ text: "!" })
+}
+
+// An open popup shows the error itself. It usually closes when Chrome's
+// screen picker opens or the user switches tabs, and then nothing would.
+async function reportErrorIfPopupClosed(message: string): Promise<void> {
+  const popups = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.POPUP],
+  })
+  if (popups.length === 0) {
+    await reportRecordingError(message)
+  }
 }
 
 export function finishBackgroundRecording(): Promise<void> {
@@ -525,14 +630,33 @@ async function openReview(input: {
   await chrome.storage.local.set({ [PENDING_REVIEW_STORAGE_KEY]: pending })
 }
 
-// From the popup: back to the review that is not sent yet.
+async function isPendingReviewShown(pending: PendingReview): Promise<boolean> {
+  const tab = await chrome.tabs.get(pending.tabId).catch(() => null)
+  if (!tab) return false
+  if (pending.isOverlay) return showReviewOverlay(pending.tabId, pending.url)
+  const recorderPageUrl = chrome.runtime.getURL(RECORDER_PAGE_PATH)
+  return (
+    readReviewSessionId(tab.url, recorderPageUrl) === pending.debuggerSessionId
+  )
+}
+
+// From the popup: back to the review that is not sent yet. If its tab cannot
+// show it any more (an error page, or the review's tab went elsewhere), it
+// opens in a new tab.
 async function reopenPendingReview(): Promise<void> {
   const pending = await readPendingReview()
   if (!pending) return
-  await focusTab(pending.tabId)
-  if (pending.isOverlay) {
-    await showReviewOverlay(pending.tabId, pending.url)
+  if (await isPendingReviewShown(pending)) {
+    await focusTab(pending.tabId)
+    return
   }
+  const tab = await chrome.tabs.create({ url: pending.url, active: true })
+  const moved: PendingReview = {
+    ...pending,
+    tabId: tab.id ?? -1,
+    isOverlay: false,
+  }
+  await chrome.storage.local.set({ [PENDING_REVIEW_STORAGE_KEY]: moved })
 }
 
 export type ScreenshotMode = "visible" | "fullPage"
@@ -570,14 +694,21 @@ async function captureFullPageWithProgress(input: {
   }
 }
 
+// After the long screenshot's percentage.
+async function restoreBadge(): Promise<void> {
+  await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
+  await showRecordingBadge(await readBackgroundRecording())
+}
+
 export async function takeScreenshot(input: {
   mode: ScreenshotMode
   tabId: number
   windowId: number
   debuggerSessionId: string
 }): Promise<void> {
-  await abandonPendingReview()
   await keepDebuggerSession(input.debuggerSessionId)
+  // Gives the page a frame to repaint without the old review.
+  if (await setPendingReviewHidden(true)) await delay(REPAINT_MS)
   try {
     const capture: FullPageCapture | null =
       input.mode === "fullPage"
@@ -587,6 +718,8 @@ export async function takeScreenshot(input: {
           })
         : null
     const image = capture?.image ?? (await captureVisibleArea(input.windowId))
+    // Like Stop for a recording: nothing after the screenshot is reported.
+    await markDebuggerSessionStopped(input.debuggerSessionId)
     await saveScreenshot(
       input.debuggerSessionId,
       image,
@@ -601,12 +734,17 @@ export async function takeScreenshot(input: {
     await backUpLogs(input.debuggerSessionId)
   } catch (error) {
     await abandonCapture(input.debuggerSessionId)
+    await setPendingReviewHidden(false)
+    await restoreBadge()
+    const reason = error instanceof Error ? error.message : "unknown error"
+    await reportErrorIfPopupClosed(
+      `Your screenshot could not be taken: ${reason}`
+    )
     throw error
-  } finally {
-    await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
-    await showRecordingBadge(await readBackgroundRecording())
   }
+  await restoreBadge()
 
+  await abandonPendingReview()
   await openReview({
     tabId: input.tabId,
     debuggerSessionId: input.debuggerSessionId,
@@ -640,16 +778,51 @@ async function handleTabClosed(tabId: number): Promise<void> {
   }
 }
 
-// After a browser restart no capture can be reviewed any more (their sessions
-// are gone), so their stored videos, screenshots and logs are removed.
-async function removeOrphanedCaptures(): Promise<void> {
-  await chrome.storage.local.remove(PENDING_REVIEW_STORAGE_KEY)
-  const store = getDebuggerSessionStore()
-  for (const sessionId of await listStoredCaptureIds()) {
-    const session = await store?.getSessionSnapshot(sessionId).catch(() => null)
-    if (!session) {
-      await deleteRecording(sessionId)
+// Review tabs Chrome restored after a restart, by the capture they show.
+async function findReviewTabs(): Promise<Map<string, PendingReview>> {
+  const recorderPageUrl = chrome.runtime.getURL(RECORDER_PAGE_PATH)
+  const reviews = new Map<string, PendingReview>()
+  for (const tab of await chrome.tabs.query({})) {
+    const url = tab.url || tab.pendingUrl
+    const sessionId = readReviewSessionId(url, recorderPageUrl)
+    if (sessionId && url && typeof tab.id === "number") {
+      reviews.set(sessionId, {
+        tabId: tab.id,
+        url,
+        debuggerSessionId: sessionId,
+        isOverlay: false,
+      })
     }
+  }
+  return reviews
+}
+
+// After a browser restart the live sessions are gone, so stored captures are
+// removed, except those of review tabs Chrome restored (see planStartupCleanup).
+async function removeOrphanedCaptures(): Promise<void> {
+  // Chrome may still be restoring tabs when it starts the extension.
+  await delay(STARTUP_CLEANUP_DELAY_MS)
+  await chrome.storage.local.remove(PENDING_REVIEW_STORAGE_KEY)
+  const storedIds = await listStoredCaptureIds()
+  const store = getDebuggerSessionStore()
+  const liveSessionIds = new Set<string>()
+  for (const sessionId of storedIds) {
+    if (await store?.getSessionSnapshot(sessionId).catch(() => null)) {
+      liveSessionIds.add(sessionId)
+    }
+  }
+  const plan = planStartupCleanup({
+    storedIds,
+    liveSessionIds,
+    reviewTabs: await findReviewTabs(),
+  })
+  for (const sessionId of plan.remove) {
+    await deleteRecording(sessionId)
+  }
+  if (plan.pending) {
+    await chrome.storage.local.set({
+      [PENDING_REVIEW_STORAGE_KEY]: plan.pending,
+    })
   }
 }
 

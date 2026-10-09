@@ -13,6 +13,11 @@ import {
 import { type Annotation, drawAnnotation } from "@/lib/annotations"
 import { pixelateRegion } from "@/lib/pixelate"
 
+// A recording only gets a frame when the screen changes, so a still page can
+// be one frame for seconds. Exporting at a fixed rate repeats that frame, so
+// drawings that start mid-frame show and the still end is kept.
+const EXPORT_FRAME_RATE = 30
+
 /** A blurred area, stored as fractions (0 to 1) of the video's width and height. */
 export interface BlurRegion {
   id: string
@@ -160,7 +165,7 @@ export async function renderEditedVideo(
         start: edits.trimStartMs / 1000,
         end: edits.trimEndMs / 1000,
       },
-      video: process ? { process } : undefined,
+      video: { process, frameRate: EXPORT_FRAME_RATE },
       showWarnings: false,
     })
 

@@ -36,6 +36,7 @@ import { type CaptureType, useRecorderInit } from "@/hooks/use-recorder-init"
 import { useRecorderMicSync } from "@/hooks/use-recorder-mic-sync"
 import { useRecorderRecordingSync } from "@/hooks/use-recorder-recording-sync"
 import { useReviewRecording } from "@/hooks/use-review-recording"
+import { useSavedReviewEdits } from "@/hooks/use-saved-review-edits"
 import { useScreenCapture } from "@/hooks/use-screen-capture"
 import { useTimer } from "@/hooks/use-timer"
 import { closeRecorderWindow } from "@/lib/background-recording/client"
@@ -83,6 +84,13 @@ const FORM_STATES: ReadonlySet<State> = new Set([
 ])
 
 // What the user captured, in messages about it.
+// Closing throws the capture away, so it asks first, also while the capture
+// loads; not once it was sent or failed to load.
+function shouldConfirmDiscard(state: State, hasError: boolean): boolean {
+  if (state === "success") return false
+  return !(state === "idle" && hasError)
+}
+
 const CAPTURE_NOUNS: Record<CaptureType, string> = {
   video: "recording",
   screenshot: "screenshot",
@@ -149,6 +157,7 @@ function App() {
     setVideoOverlays,
     applyScreenshotEdits,
     resetEdits,
+    restoreEdits,
     prepareAttachment,
   } = useCaptureEdits()
   const debuggerSessionId = useMemo(
@@ -181,8 +190,6 @@ function App() {
     []
   )
 
-  const captureContext = useCaptureContext()
-
   const {
     startRecording: startCapture,
     stopRecording: stopCapture,
@@ -200,6 +207,16 @@ function App() {
   } = useScreenCapture()
   const { isReview, forgetRecording, cancelReview } =
     useReviewRecording(debuggerSessionId)
+  const captureContext = useCaptureContext({
+    sessionId: debuggerSessionId,
+    isReview,
+  })
+  useSavedReviewEdits({
+    sessionId: debuggerSessionId,
+    isReview,
+    edits: { videoEdits, screenshotEdits, editedScreenshot },
+    onRestore: restoreEdits,
+  })
 
   const runningDuration = useTimer(
     startTime,
@@ -655,7 +672,7 @@ function App() {
         <CloseReviewButton
           captureLabel={CAPTURE_NOUNS[captureType]}
           closeOnEscape={state !== "editing" && state !== "submitting"}
-          confirmDiscard={state !== "success" && state !== "idle"}
+          confirmDiscard={shouldConfirmDiscard(state, Boolean(error))}
           isVisible={isReview}
           onClose={state === "success" ? closeRecorderWindow : handleReset}
           onDiscard={handleReset}
@@ -712,6 +729,7 @@ function App() {
       {FORM_STATES.has(state) ? (
         <div hidden={state === "editing"}>
           <FormStep
+            captureLabel={CAPTURE_NOUNS[captureType]}
             debuggerSummary={debuggerSummary}
             initialTitle={suggestedTitle}
             isSubmitting={state === "submitting"}

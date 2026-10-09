@@ -98,7 +98,8 @@ function preparePageForCapture(): PageLayout {
   return {
     scrollHeight: doc.scrollHeight,
     startOffset,
-    frame: { x: 0, y: 0, width: doc.clientWidth, height: window.innerHeight },
+    // clientHeight leaves out a horizontal scrollbar, as clientWidth does.
+    frame: { x: 0, y: 0, width: doc.clientWidth, height: doc.clientHeight },
     viewportWidth: window.innerWidth,
   }
 }
@@ -137,7 +138,11 @@ function freezeFloatingElements(): void {
     if (position === "fixed") {
       restyle(element, "visibility", "hidden")
     } else if (position === "sticky") {
+      // As relative, its top/bottom offset would shift it from its place.
       restyle(element, "position", "relative")
+      for (const side of ["top", "right", "bottom", "left"]) {
+        restyle(element, side, "auto")
+      }
     }
   }
 }
@@ -151,6 +156,10 @@ function restorePage(): void {
       element.style.setProperty(property, value, priority)
     } else {
       element.style.removeProperty(property)
+    }
+    // Leaves no empty style attribute on elements that had none.
+    if (element.getAttribute("style") === "") {
+      element.removeAttribute("style")
     }
   }
   if (state.target) {
