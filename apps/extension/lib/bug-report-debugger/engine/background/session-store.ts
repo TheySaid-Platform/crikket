@@ -31,6 +31,9 @@ const TAB_SWITCH_ACTION_TYPE = "tab-switch"
 // except right after it starts (the countdown), so an orphaned session never
 // keeps absorbing tabs.
 const UNATTACHED_SESSION_JOIN_WINDOW_MS = 60_000
+// chrome.storage.session survives a worker restart but not a browser restart,
+// so finding this marker means stored tab ids still point at the same tabs.
+const BROWSER_SESSION_MARKER_KEY = "crikketDebuggerBrowserSession"
 
 // Stamped on every event, so keep it short and drop query strings and hashes,
 // which can hold tokens (e.g. OAuth callbacks).
@@ -90,7 +93,7 @@ interface PageEventSource {
   tabUrl?: string
 }
 
-interface DebuggerSessionStore {
+export interface DebuggerSessionStore {
   injectDebuggerScriptForTab: (tabId: number) => Promise<void>
   startSession: (payload: StartSessionPayload) => Promise<{
     sessionId: string
@@ -114,6 +117,7 @@ interface DebuggerSessionStore {
     payload: SetRecordingPausedPayload
   ) => Promise<void>
   discardSession: (sessionId: string) => Promise<void>
+  markSessionBackgroundRecorder: (sessionId: string) => Promise<void>
   ensureDebuggerScriptForTab: (tabId: number, url?: string) => Promise<void>
   handleTabActivated: (tab: chrome.tabs.Tab) => Promise<void>
   handleTabCreated: (tab: chrome.tabs.Tab) => Promise<void>
@@ -210,10 +214,37 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
   }
 
+  // False after a browser restart or an extension reload.
+  const isSameBrowserSession = async (): Promise<boolean> => {
+    try {
+      const result = await chrome.storage.session.get(
+        BROWSER_SESSION_MARKER_KEY
+      )
+      await chrome.storage.session.set({ [BROWSER_SESSION_MARKER_KEY]: true })
+      return result[BROWSER_SESSION_MARKER_KEY] === true
+    } catch {
+      return false
+    }
+  }
+
+  // Chrome restarts the worker on its own, often mid-recording: a session with
+  // no recorder page survives that, until the browser restarts.
+  const shouldRestoreSession = (
+    session: StoredDebuggerSession,
+    urlsByTabId: Map<number, string> | null,
+    sameBrowserSession: boolean
+  ): boolean => {
+    if (session.backgroundRecorder) {
+      return sameBrowserSession
+    }
+    return !urlsByTabId || isRecorderStillOpen(session, urlsByTabId)
+  }
+
   const hydrateStoredState = async () => {
-    const [result, urlsByTabId] = await Promise.all([
+    const [result, urlsByTabId, sameBrowserSession] = await Promise.all([
       chrome.storage.local.get([DEBUGGER_SESSIONS_STORAGE_KEY]),
       loadOpenTabs(),
+      isSameBrowserSession(),
     ])
 
     const storedSessions = result[DEBUGGER_SESSIONS_STORAGE_KEY]
@@ -229,7 +260,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
         continue
       }
 
-      if (urlsByTabId && !isRecorderStillOpen(session, urlsByTabId)) {
+      if (!shouldRestoreSession(session, urlsByTabId, sameBrowserSession)) {
         droppedStaleSession = true
         continue
       }
@@ -296,11 +327,15 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       return
     }
 
-    // Paused time is not in the report. Storing it anyway could push the
-    // recorded events out of the capped list during a long pause.
+    // Paused time is not in the report, and neither is anything after Stop.
+    // Storing them anyway could push recorded events out of the capped list.
     const pausedAt = session.recordingPausedAt
+    const stoppedAt = session.recordingStoppedAt
     for (const event of events) {
       if (pausedAt !== null && event.timestamp > pausedAt) {
+        continue
+      }
+      if (stoppedAt !== null && event.timestamp > stoppedAt) {
         continue
       }
       // Network events are not deduplicated: webRequest reports each request
@@ -363,6 +398,20 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     session.recordingStartedAt !== null &&
     session.recordingStoppedAt === null
 
+  // A full screen recording follows the user and a recorded tab can close
+  // mid-recording, so the session stays until Stop.
+  const isBackgroundRecordingRunning = (
+    session: StoredDebuggerSession
+  ): boolean =>
+    session.backgroundRecorder &&
+    session.captureType === "video" &&
+    session.recordingStoppedAt === null
+
+  // A tab first seen while paused was never on the video, so nothing joins a
+  // paused session; the tab in front joins when the recording resumes.
+  const isPaused = (session: StoredDebuggerSession): boolean =>
+    session.recordingPausedAt !== null
+
   // The newest session that follows the user into other tabs, while it is
   // recording. Record This Tab sessions never take in other tabs.
   const getJoinableSession = (): StoredDebuggerSession | null => {
@@ -377,7 +426,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
 
     if (
       !newest?.followTabs ||
-      newest.recorderTabId === null ||
+      (newest.recorderTabId === null && !newest.backgroundRecorder) ||
       !isRecording(newest)
     ) {
       return null
@@ -540,6 +589,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       followTabs:
         payload.captureType === "video" && payload.followTabs === true,
       recorderTabId: null,
+      backgroundRecorder: false,
       activeTabId: payload.captureTabId,
       lastSwitchTabId: payload.captureTabId,
       tabs: [
@@ -754,6 +804,19 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     }
   }
 
+  // Persisted at once: a worker restart right after must not lose it.
+  const markSessionBackgroundRecorder = async (sessionId: string) => {
+    await ensureLoaded()
+
+    const session = sessionsById.get(sessionId)
+    if (!session || session.backgroundRecorder) {
+      return
+    }
+
+    session.backgroundRecorder = true
+    await persistState()
+  }
+
   const discardSession = async (sessionId: string) => {
     await ensureLoaded()
 
@@ -803,7 +866,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     schedulePersist()
     // A tab opened from a link is active before it has a URL; handleTabUpdated
     // records the switch once it does.
-    if (!isTrackableTab(tab)) {
+    if (isPaused(session) || !isTrackableTab(tab)) {
       return
     }
 
@@ -817,7 +880,12 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     await ensureLoaded()
 
     const session = getJoinableSession()
-    if (!session || tab.incognito || typeof tab.openerTabId !== "number") {
+    if (
+      !session ||
+      isPaused(session) ||
+      tab.incognito ||
+      typeof tab.openerTabId !== "number"
+    ) {
       return
     }
 
@@ -844,15 +912,21 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       tabUrls.set(tab.id, tab.url)
     }
 
+    // After Stop the report keeps the page as it was captured.
     const trackedSession = sessionsById.get(tabToSession.get(tab.id) ?? "")
-    if (trackedSession) {
+    if (trackedSession && trackedSession.recordingStoppedAt === null) {
       updateSessionTabInfo(trackedSession, tab)
     }
 
     // The tab the user is on only now became a web page: a link opened in a
     // new tab, or a new tab where they typed a URL.
     const session = getJoinableSession()
-    if (!session || session.activeTabId !== tab.id || !isTrackableTab(tab)) {
+    if (
+      !session ||
+      isPaused(session) ||
+      session.activeTabId !== tab.id ||
+      !isTrackableTab(tab)
+    ) {
       return
     }
 
@@ -880,8 +954,13 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       const hasOpenTabs = Array.from(tabToSession.values()).includes(
         session.sessionId
       )
-      // Without a recorder page, nothing is left to submit the session.
-      if (!hasOpenTabs && session.recorderTabId === null) {
+      // Nothing can submit the session now. A review in its own tab uses the
+      // logs saved at stop.
+      if (
+        !hasOpenTabs &&
+        session.recorderTabId === null &&
+        !isBackgroundRecordingRunning(session)
+      ) {
         removeSession(session.sessionId)
       }
     }
@@ -898,6 +977,7 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
     markSessionRecordingStopped,
     setSessionRecordingPaused,
     discardSession,
+    markSessionBackgroundRecorder,
     ensureDebuggerScriptForTab,
     handleTabActivated,
     handleTabCreated,

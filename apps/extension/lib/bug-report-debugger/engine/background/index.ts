@@ -14,8 +14,18 @@ import {
 import type { DebuggerRuntimeResponse } from "@crikket/capture-core/debugger/types"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { isDebuggerRuntimeMessage } from "../../messaging"
-import { createDebuggerSessionStore } from "./session-store"
+import {
+  createDebuggerSessionStore,
+  type DebuggerSessionStore,
+} from "./session-store"
 import { registerWebRequestCollector } from "./web-request-collector"
+
+let sessionStore: DebuggerSessionStore | null = null
+
+// For other background modules: the worker's own messages never reach it.
+export function getDebuggerSessionStore(): DebuggerSessionStore | null {
+  return sessionStore
+}
 
 export function registerDebuggerBackgroundListeners(): void {
   const scope = globalThis as typeof globalThis & {
@@ -29,6 +39,7 @@ export function registerDebuggerBackgroundListeners(): void {
   scope[BACKGROUND_LISTENER_FLAG] = true
 
   const store = createDebuggerSessionStore()
+  sessionStore = store
 
   registerWebRequestCollector({
     onNetworkEvent: (tabId, event) => {

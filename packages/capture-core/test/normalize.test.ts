@@ -99,6 +99,8 @@ describe("debugger normalization regression", () => {
       // Older stored sessions never follow tabs.
       followTabs: false,
       recorderTabId: null,
+      // Older stored sessions were all recorded in a recorder tab.
+      backgroundRecorder: false,
       activeTabId: null,
       lastSwitchTabId: null,
       // Sessions stored before multi-tab capture fall back to the capture tab.
@@ -178,6 +180,7 @@ describe("debugger normalization regression", () => {
 
     expect(session?.recorderTabId).toBe(9)
     expect(session?.followTabs).toBe(false)
+    expect(session?.backgroundRecorder).toBe(false)
     expect(session?.tabs).toEqual([
       { tabId: 1, url: "https://example.com", title: "App", joinedAt: 1000 },
       {
@@ -187,6 +190,22 @@ describe("debugger normalization regression", () => {
         joinedAt: 1500,
       },
     ])
+  })
+
+  // A worker restart must not forget that a session has no recorder tab, or
+  // its logs are dropped before the report is sent.
+  it("keeps the background recorder flag of stored sessions", () => {
+    const session = normalizeStoredSession({
+      sessionId: "session_3",
+      captureTabId: 5,
+      captureType: "video",
+      startedAt: 1000,
+      backgroundRecorder: true,
+      events: [],
+    })
+
+    expect(session?.backgroundRecorder).toBe(true)
+    expect(session?.recorderTabId).toBeNull()
   })
 
   it("keeps why a network request failed", () => {

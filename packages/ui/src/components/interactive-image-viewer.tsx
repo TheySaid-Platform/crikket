@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from "react"
@@ -36,6 +37,9 @@ const MAX_IMAGE_ZOOM = 4
 const IMAGE_ZOOM_STEP = 0.25
 const DOUBLE_CLICK_ZOOM = 2
 const KEYBOARD_PAN_STEP = 48
+// An image this much taller than the viewer at its shown width is a long
+// screenshot: it scrolls from the top instead of showing its middle.
+const LONG_IMAGE_FACTOR = 1.5
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -59,6 +63,166 @@ function clampPanOffset(
   }
 }
 
+// The viewer is at most min(75vh, 100vh - 9rem) tall (see its classes).
+function isLongImage(
+  image: HTMLImageElement,
+  container: HTMLElement | null
+): boolean {
+  const viewerHeight = Math.min(
+    window.innerHeight * 0.75,
+    window.innerHeight - 144
+  )
+  const shownWidth = Math.min(
+    container?.clientWidth ?? image.naturalWidth,
+    image.naturalWidth
+  )
+  const shownHeight = (shownWidth * image.naturalHeight) / image.naturalWidth
+  return shownHeight > viewerHeight * LONG_IMAGE_FACTOR
+}
+
+async function toggleFullscreen(container: HTMLElement | null) {
+  if (!container) {
+    return
+  }
+
+  try {
+    if (document.fullscreenElement === container) {
+      await document.exitFullscreen()
+      return
+    }
+
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    }
+
+    await container.requestFullscreen()
+  } catch {
+    return
+  }
+}
+
+function ViewerToolbar({
+  zoom,
+  onZoom,
+  onReset,
+  onToggleFullscreen,
+}: {
+  zoom: number
+  onZoom: (delta: number) => void
+  onReset: () => void
+  onToggleFullscreen: () => void
+}) {
+  return (
+    <div className="absolute top-2 left-2 z-20 flex items-center gap-1 rounded-md border bg-background/80 p-1 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">
+      <Button
+        aria-label="Zoom out"
+        disabled={zoom <= MIN_IMAGE_ZOOM}
+        onClick={() => onZoom(-IMAGE_ZOOM_STEP)}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <span aria-hidden="true">-</span>
+      </Button>
+      <Button
+        aria-label="Zoom in"
+        disabled={zoom >= MAX_IMAGE_ZOOM}
+        onClick={() => onZoom(IMAGE_ZOOM_STEP)}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <span aria-hidden="true">+</span>
+      </Button>
+      <Separator className="h-4 shrink-0" orientation="vertical" />
+      <Button
+        aria-label="Reset zoom"
+        onClick={onReset}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+        <span className="sr-only">Reset</span>
+      </Button>
+      <Button
+        aria-label="Toggle fullscreen"
+        onClick={onToggleFullscreen}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
+        <span className="sr-only">Fullscreen</span>
+      </Button>
+    </div>
+  )
+}
+
+function ZoomBadge({ zoom }: { zoom: number }) {
+  return (
+    <div className="pointer-events-none absolute right-2 bottom-2 z-20 rounded-md border bg-background/80 px-2 py-1 font-mono text-[10px] text-muted-foreground shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">
+      {Math.round(zoom * 100)}%
+    </div>
+  )
+}
+
+// A long screenshot, scrolling from the top. At 100% one image pixel takes
+// one screen pixel, so a narrow panel is not stretched.
+function TallImageViewer({
+  alt,
+  src,
+  naturalWidth,
+}: {
+  alt: string
+  src: string
+  naturalWidth: number
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useRef<HTMLElement | null>(null)
+  const [zoom, setZoom] = useState(MIN_IMAGE_ZOOM)
+  const baseWidth = naturalWidth / window.devicePixelRatio
+
+  const changeZoom = (delta: number) => {
+    setZoom((currentZoom) =>
+      clampValue(currentZoom + delta, MIN_IMAGE_ZOOM, MAX_IMAGE_ZOOM)
+    )
+  }
+
+  const handleReset = () => {
+    setZoom(MIN_IMAGE_ZOOM)
+    scrollRef.current?.scrollTo({ top: 0, left: 0 })
+  }
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <ViewerToolbar
+        onReset={handleReset}
+        onToggleFullscreen={() => toggleFullscreen(containerRef.current)}
+        onZoom={changeZoom}
+        zoom={zoom}
+      />
+      <section
+        aria-label={alt}
+        // The top padding keeps the toolbar off the start of the image.
+        className="max-h-[min(75vh,calc(100vh-9rem))] w-full overflow-auto rounded-lg pt-11 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        ref={scrollRef}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: the arrow keys scroll the long image once it has focus
+        tabIndex={0}
+      >
+        <img
+          alt={alt}
+          className="mx-auto block h-auto max-w-none select-none rounded-lg shadow-sm"
+          draggable={false}
+          src={src}
+          style={{ width: `calc(${zoom} * min(100%, ${baseWidth}px))` }}
+        />
+      </section>
+      <ZoomBadge zoom={zoom} />
+    </div>
+  )
+}
+
 export function InteractiveImageViewer({
   alt,
   compact,
@@ -70,7 +234,26 @@ export function InteractiveImageViewer({
   const [zoom, setZoom] = useState(MIN_IMAGE_ZOOM)
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
+  const [tallImage, setTallImage] = useState<{
+    src: string
+    naturalWidth: number
+  } | null>(null)
   const canPan = zoom > MIN_IMAGE_ZOOM
+
+  // Reads the image's size (from the browser cache) to spot a long one.
+  useEffect(() => {
+    let isCurrent = true
+    const probe = new Image()
+    probe.onload = () => {
+      if (isCurrent && isLongImage(probe, containerRef.current)) {
+        setTallImage({ src, naturalWidth: probe.naturalWidth })
+      }
+    }
+    probe.src = src
+    return () => {
+      isCurrent = false
+    }
+  }, [src])
 
   const updateZoom = useCallback((updater: (currentZoom: number) => number) => {
     setZoom((currentZoom) => {
@@ -211,26 +394,15 @@ export function InteractiveImageViewer({
     dragStateRef.current = null
   }
 
-  const handleToggleFullscreen = async () => {
-    const container = containerRef.current
-    if (!container) {
-      return
-    }
-
-    try {
-      if (document.fullscreenElement === container) {
-        await document.exitFullscreen()
-        return
-      }
-
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
-      }
-
-      await container.requestFullscreen()
-    } catch {
-      return
-    }
+  // On a phone (compact) the whole image already shows at full width.
+  if (!compact && tallImage?.src === src) {
+    return (
+      <TallImageViewer
+        alt={alt}
+        naturalWidth={tallImage.naturalWidth}
+        src={src}
+      />
+    )
   }
 
   return (
@@ -242,53 +414,12 @@ export function InteractiveImageViewer({
       }
       ref={containerRef}
     >
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-1 rounded-md border bg-background/80 p-1 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">
-        <Button
-          aria-label="Zoom out"
-          disabled={zoom <= MIN_IMAGE_ZOOM}
-          onClick={() => {
-            updateZoom((currentZoom) => currentZoom - IMAGE_ZOOM_STEP)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <span aria-hidden="true">-</span>
-        </Button>
-        <Button
-          aria-label="Zoom in"
-          disabled={zoom >= MAX_IMAGE_ZOOM}
-          onClick={() => {
-            updateZoom((currentZoom) => currentZoom + IMAGE_ZOOM_STEP)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <span aria-hidden="true">+</span>
-        </Button>
-        <Separator className="h-4 shrink-0" orientation="vertical" />
-        <Button
-          aria-label="Reset zoom"
-          onClick={handleReset}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-          <span className="sr-only">Reset</span>
-        </Button>
-        <Button
-          aria-label="Toggle fullscreen"
-          onClick={handleToggleFullscreen}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
-          <span className="sr-only">Fullscreen</span>
-        </Button>
-      </div>
+      <ViewerToolbar
+        onReset={handleReset}
+        onToggleFullscreen={() => toggleFullscreen(containerRef.current)}
+        onZoom={(delta) => updateZoom((currentZoom) => currentZoom + delta)}
+        zoom={zoom}
+      />
 
       <button
         className={
@@ -331,9 +462,7 @@ export function InteractiveImageViewer({
         />
       </button>
 
-      <div className="pointer-events-none absolute right-2 bottom-2 z-20 rounded-md border bg-background/80 px-2 py-1 font-mono text-[10px] text-muted-foreground shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">
-        {Math.round(zoom * 100)}%
-      </div>
+      <ZoomBadge zoom={zoom} />
     </div>
   )
 }

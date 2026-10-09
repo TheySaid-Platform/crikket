@@ -13,10 +13,13 @@ import {
   SelectValue,
 } from "@crikket/ui/components/ui/select"
 import { Textarea } from "@crikket/ui/components/ui/textarea"
+import { cn } from "@crikket/ui/lib/utils"
 import { useForm } from "@tanstack/react-form"
-import { AlertTriangle } from "lucide-react"
-import { type SyntheticEvent, useCallback, useEffect, useRef } from "react"
+import { AlertTriangle, Globe, MousePointerClick, Terminal } from "lucide-react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import * as z from "zod"
+import { DiscardConfirm } from "@/components/close-review-button"
+import { BRAND_BUTTON_CLASS } from "@/lib/brand"
 
 const priorityValues = Object.values(PRIORITY_OPTIONS) as [
   Priority,
@@ -38,9 +41,10 @@ interface DebuggerSummary {
 }
 
 interface FormStepProps {
-  captureType: "video" | "screenshot"
-  previewUrl: string | null
-  videoDurationMs: number | null
+  // The capture with its trim bar or edit button, shown above the form.
+  preview: ReactNode
+  // What is being reported, for the discard question: "recording" or "screenshot".
+  captureLabel: string
   initialTitle: string
   isSubmitting: boolean
   submitError: string | null
@@ -61,9 +65,8 @@ interface FormValues {
 }
 
 export function FormStep({
-  captureType,
-  previewUrl,
-  videoDurationMs,
+  preview,
+  captureLabel,
   initialTitle,
   isSubmitting,
   submitError,
@@ -72,6 +75,7 @@ export function FormStep({
   onSubmit,
   onCancel,
 }: FormStepProps) {
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false)
   const defaultValues: FormValues = {
     title: initialTitle,
     description: "",
@@ -93,11 +97,6 @@ export function FormStep({
   })
 
   const isBusy = isSubmitting || form.state.isSubmitting
-  const totalCapturedEvents =
-    debuggerSummary.actions +
-    debuggerSummary.logs +
-    debuggerSummary.networkRequests
-  const isPrimingVideoDurationRef = useRef(false)
 
   // The suggested title improves once the recording's logs are read; follow it
   // until the user types their own.
@@ -113,203 +112,113 @@ export function FormStep({
     }
   }, [form, initialTitle])
 
-  const handleVideoLoadedMetadata = useCallback(
-    (event: SyntheticEvent<HTMLVideoElement>) => {
-      const player = event.currentTarget
-      if (isPrimingVideoDurationRef.current) {
-        return
-      }
-
-      if (!(typeof videoDurationMs === "number" && videoDurationMs > 0)) {
-        return
-      }
-
-      if (Number.isFinite(player.duration) && player.duration > 0) {
-        return
-      }
-
-      const durationSeconds = videoDurationMs / 1000
-      const safeSeekTargetSeconds = Math.max(0, durationSeconds - 0.001)
-      if (safeSeekTargetSeconds <= 0) {
-        return
-      }
-
-      isPrimingVideoDurationRef.current = true
-      const originalTime = player.currentTime
-
-      const restorePosition = () => {
-        const maxDurationSeconds =
-          Number.isFinite(player.duration) && player.duration > 0
-            ? player.duration
-            : durationSeconds
-        player.currentTime = Math.min(originalTime, maxDurationSeconds)
-        isPrimingVideoDurationRef.current = false
-      }
-
-      player.addEventListener("seeked", restorePosition, { once: true })
-
-      try {
-        player.currentTime = safeSeekTargetSeconds
-      } catch {
-        isPrimingVideoDurationRef.current = false
-      }
-    },
-    [videoDurationMs]
-  )
+  const fieldError = (meta: { isTouched: boolean; errors: unknown[] }) =>
+    meta.isTouched && meta.errors.length > 0
 
   return (
-    <div className="space-y-6">
-      {previewUrl && (
-        <div className="overflow-hidden rounded-xl border bg-black shadow-sm">
-          {captureType === "video" ? (
-            <div className="relative">
-              <video
-                className="max-h-[400px] w-full bg-black object-contain"
-                controls
-                onLoadedMetadata={handleVideoLoadedMetadata}
-                preload="metadata"
-                src={previewUrl}
-              >
-                <track kind="captions" />
-              </video>
-            </div>
-          ) : (
-            <img
-              alt="Screenshot preview"
-              className="max-h-[400px] w-full bg-black object-contain"
-              src={previewUrl}
-            />
-          )}
-        </div>
-      )}
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
+      <div className="min-w-0">{preview}</div>
 
       <form
-        className="space-y-6"
+        className="flex flex-col gap-5 rounded-2xl border border-border/60 bg-slate-50/80 p-4 lg:p-5"
         onSubmit={(event) => {
           event.preventDefault()
           event.stopPropagation()
           form.handleSubmit()
         }}
       >
-        <div className="space-y-4">
-          <section className="space-y-2 rounded-xl border bg-muted/20 p-4">
-            <p className="font-medium text-sm">Captured debugger data</p>
-            <p className="text-muted-foreground text-xs">
-              {totalCapturedEvents} total events
-            </p>
-            <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
-              <span>Actions: {debuggerSummary.actions}</span>
-              <span aria-hidden="true">•</span>
-              <span>Logs: {debuggerSummary.logs}</span>
-              <span aria-hidden="true">•</span>
-              <span>Requests: {debuggerSummary.networkRequests}</span>
-            </div>
-          </section>
+        <form.Field name="title">
+          {(field) => {
+            const isInvalid = fieldError(field.state.meta)
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Title</FieldLabel>
+                <Input
+                  aria-invalid={isInvalid}
+                  className="h-10"
+                  id={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="What went wrong?"
+                  value={field.state.value}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
+        </form.Field>
 
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_190px]">
-            <form.Field name="title">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched &&
-                  field.state.meta.errors.length > 0
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>
-                      Title (Optional)
-                    </FieldLabel>
-                    <Input
-                      aria-invalid={isInvalid}
-                      id={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      placeholder="Give this report a quick title"
-                      value={field.state.value}
-                    />
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                )
-              }}
-            </form.Field>
+        <form.Field name="description">
+          {(field) => {
+            const isInvalid = fieldError(field.state.meta)
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>
+                  Description
+                  <span className="font-normal text-muted-foreground">
+                    (optional)
+                  </span>
+                </FieldLabel>
+                <Textarea
+                  aria-invalid={isInvalid}
+                  className="min-h-28 resize-none"
+                  id={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Steps, what you expected, anything that helps..."
+                  rows={5}
+                  value={field.state.value}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
+        </form.Field>
 
-            <form.Field name="priority">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched &&
-                  field.state.meta.errors.length > 0
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>
-                      Priority (Optional)
-                    </FieldLabel>
-                    <Select
-                      onValueChange={(value) => {
-                        if (value) {
-                          field.handleChange(value as Priority)
-                        }
-                      }}
-                      value={field.state.value}
-                    >
-                      <SelectTrigger
-                        aria-invalid={isInvalid}
-                        className="w-full"
-                        id={field.name}
-                      >
-                        <SelectValue className="capitalize" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {priorityValues.map((priority) => (
-                          <SelectItem key={priority} value={priority}>
-                            {formatPriorityLabel(priority)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                )
-              }}
-            </form.Field>
-          </div>
-
-          <form.Field name="description">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && field.state.meta.errors.length > 0
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>
-                    Description (Optional)
-                  </FieldLabel>
-                  <Textarea
+        <form.Field name="priority">
+          {(field) => {
+            const isInvalid = fieldError(field.state.meta)
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Priority</FieldLabel>
+                <Select
+                  onValueChange={(value) => {
+                    if (value) {
+                      field.handleChange(value as Priority)
+                    }
+                  }}
+                  value={field.state.value}
+                >
+                  <SelectTrigger
                     aria-invalid={isInvalid}
-                    className="resize-none"
+                    className="h-10 w-full"
                     id={field.name}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder="Describe what went wrong..."
-                    rows={4}
-                    value={field.state.value}
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              )
-            }}
-          </form.Field>
-        </div>
+                  >
+                    <SelectValue className="capitalize" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priorityValues.map((priority) => (
+                      <SelectItem key={priority} value={priority}>
+                        {formatPriorityLabel(priority)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
+        </form.Field>
+
+        <CapturedDataSummary summary={debuggerSummary} />
 
         {preSubmitWarnings.length > 0 ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="flex items-center gap-2 font-medium text-amber-800 text-sm">
               <AlertTriangle className="h-4 w-4" />
-              Review before submitting
+              Before you submit
             </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800 text-xs">
+            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-amber-800 text-xs">
               {preSubmitWarnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
@@ -317,30 +226,102 @@ export function FormStep({
           </div>
         ) : null}
 
-        {submitError && (
-          <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4">
-            <p className="text-red-400 text-sm">{submitError}</p>
+        {submitError ? (
+          <div
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3"
+            role="alert"
+          >
+            <p className="text-destructive text-sm">{submitError}</p>
           </div>
-        )}
+        ) : null}
 
-        <div className="mt-6 flex gap-3">
+        <div className="relative mt-auto flex flex-col gap-2 pt-1">
           <Button
-            className="flex-1"
+            className={cn("w-full", BRAND_BUTTON_CLASS)}
             disabled={isBusy}
-            onClick={() => {
-              form.reset()
-              onCancel()
-            }}
+            size="lg"
+            type="submit"
+          >
+            {isBusy ? "Creating report..." : "Create bug report"}
+          </Button>
+          <Button
+            className="w-full text-muted-foreground"
+            disabled={isBusy}
+            onClick={() => setIsConfirmingCancel(true)}
             type="button"
-            variant="outline"
+            variant="ghost"
           >
             Cancel
           </Button>
-          <Button className="flex-1" disabled={isBusy} type="submit">
-            {isBusy ? "Submitting..." : "Submit Bug Report"}
-          </Button>
+          {isConfirmingCancel ? (
+            <DiscardConfirm
+              captureLabel={captureLabel}
+              className="right-0 bottom-full left-0 mx-auto mb-2"
+              onDiscard={() => {
+                form.reset()
+                onCancel()
+              }}
+              onKeep={() => setIsConfirmingCancel(false)}
+            />
+          ) : null}
         </div>
       </form>
+    </div>
+  )
+}
+
+const CAPTURED_DATA_STATS: {
+  key: keyof DebuggerSummary
+  label: string
+  icon: typeof Terminal
+  tone: string
+}[] = [
+  {
+    key: "actions",
+    label: "Actions",
+    icon: MousePointerClick,
+    tone: "bg-violet-100 text-violet-600",
+  },
+  {
+    key: "logs",
+    label: "Logs",
+    icon: Terminal,
+    tone: "bg-amber-100 text-amber-600",
+  },
+  {
+    key: "networkRequests",
+    label: "Requests",
+    icon: Globe,
+    tone: "bg-sky-100 text-sky-600",
+  },
+]
+
+// What the report carries besides the capture: steps, console and network.
+function CapturedDataSummary({ summary }: { summary: DebuggerSummary }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background p-3 shadow-xs">
+      <p className="mb-2 font-medium text-muted-foreground text-xs">
+        Attached to this report
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {CAPTURED_DATA_STATS.map(({ key, label, icon: Icon, tone }) => (
+          <div
+            className="flex flex-col items-center gap-1 px-2 py-1 text-center"
+            key={key}
+          >
+            <span
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-lg",
+                tone
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </span>
+            <p className="font-semibold text-sm tabular-nums">{summary[key]}</p>
+            <p className="text-[11px] text-muted-foreground">{label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,3 +1,11 @@
+export const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, ms))
+  })
+
+export const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value))
+
 /**
  * Get device info for the current browser
  */

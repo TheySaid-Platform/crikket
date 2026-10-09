@@ -1,10 +1,19 @@
+import { readDebuggerSessionIdFromSearch } from "@crikket/capture-core/debugger/recorder-session"
 import { useEffect, useRef } from "react"
+import { REVIEW_QUERY_PARAM } from "@/lib/background-recording/protocol"
+import {
+  type FullPageDetails,
+  loadRecording,
+  loadScreenshot,
+  type StoredRecording,
+} from "@/lib/recording-store"
 
 export type CaptureType = "video" | "screenshot"
 
 interface UseRecorderInitProps {
   onCaptureTypeChange: (type: CaptureType) => void
-  onScreenshotLoaded: (blob: Blob) => void
+  onScreenshotLoaded: (blob: Blob, fullPage: FullPageDetails | null) => void
+  onRecordingLoaded: (recording: StoredRecording) => void
   onStartRecording: () => void
   onError: (error: string) => void
 }
@@ -12,6 +21,7 @@ interface UseRecorderInitProps {
 export function useRecorderInit({
   onCaptureTypeChange,
   onScreenshotLoaded,
+  onRecordingLoaded,
   onStartRecording,
   onError,
 }: UseRecorderInitProps) {
@@ -23,23 +33,46 @@ export function useRecorderInit({
     onCaptureTypeChange(type)
 
     if (type === "screenshot") {
-      chrome.storage.local.get(["pendingScreenshot"], (result) => {
-        if (result.pendingScreenshot) {
-          fetch(result.pendingScreenshot as string)
-            .then((res) => res.blob())
-            .then((blob) => {
-              onScreenshotLoaded(blob)
-              chrome.storage.local.remove(["pendingScreenshot"])
-            })
-            .catch((err) => {
-              console.error("Failed to load screenshot:", err)
-              onError("Failed to load screenshot")
-            })
-        }
-      })
+      if (autoStartChecked.current) return
+      autoStartChecked.current = true
+
+      // Taken by the background worker, which stored it for this review.
+      const sessionId = readDebuggerSessionIdFromSearch(window.location.search)
+      loadScreenshot(sessionId ?? "")
+        .then((screenshot) => {
+          if (screenshot) {
+            onScreenshotLoaded(screenshot.image, screenshot.fullPage)
+          } else {
+            onError("This screenshot is no longer available.")
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load screenshot:", err)
+          onError("Failed to load screenshot")
+        })
     } else if (type === "video") {
       if (autoStartChecked.current) return
       autoStartChecked.current = true
+
+      // Recorded in the background: open the finished video for review.
+      if (params.has(REVIEW_QUERY_PARAM)) {
+        const sessionId = readDebuggerSessionIdFromSearch(
+          window.location.search
+        )
+        loadRecording(sessionId ?? "")
+          .then((recording) => {
+            if (recording) {
+              onRecordingLoaded(recording)
+            } else {
+              onError("This recording is no longer available.")
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to load recording:", err)
+            onError("Failed to load the recording")
+          })
+        return
+      }
 
       chrome.storage.local.get(["startRecordingImmediately"], (result) => {
         if (result.startRecordingImmediately) {
@@ -48,5 +81,11 @@ export function useRecorderInit({
         }
       })
     }
-  }, [onCaptureTypeChange, onScreenshotLoaded, onStartRecording, onError])
+  }, [
+    onCaptureTypeChange,
+    onScreenshotLoaded,
+    onRecordingLoaded,
+    onStartRecording,
+    onError,
+  ])
 }
