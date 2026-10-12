@@ -7,7 +7,6 @@ import {
   describeTarget,
   type FrameRequest,
   type FrameTarget,
-  parseTimeMs,
   resolveFrameTarget,
 } from "../media/targets"
 import type { VideoFrame, VideoFrameService } from "../media/video-frames"
@@ -104,7 +103,7 @@ export function registerGetVideoFramesTool(
         }
 
         const { targets, problems } = input.window
-          ? resolveWindow(input.window)
+          ? await resolveWindow(deps, { id, window: input.window })
           : await resolveTargets(deps, { at: input.at ?? [], id })
         if (targets.length === 0) {
           throw new ToolInputError(problems.join(" "))
@@ -196,18 +195,48 @@ async function overviewResult(
   }
 }
 
-function resolveWindow(window: {
-  from: FrameRequest
-  to: FrameRequest
-  count?: number
-}): { targets: FrameTarget[]; problems: string[] } {
-  const fromMs = parseTimeMs(window.from)
-  const toMs = parseTimeMs(window.to)
-  if (fromMs === null || toMs === null || toMs <= fromMs) {
+/** Step offsets, loaded only when one of the moments names a step. */
+async function loadStepOffsets(
+  deps: ToolDependencies,
+  id: string,
+  moments: FrameRequest[]
+): Promise<(number | null)[]> {
+  const needsSteps = moments.some(
+    (value) => typeof value === "string" && STEP_WORD_PATTERN.test(value)
+  )
+  if (!needsSteps) {
+    return []
+  }
+  const { actions } = await deps.reader.getDebuggerEvents(id)
+  return actions.map((action) => action.offset)
+}
+
+async function resolveWindow(
+  deps: ToolDependencies,
+  input: {
+    id: string
+    window: { from: FrameRequest; to: FrameRequest; count?: number }
+  }
+): Promise<{ targets: FrameTarget[]; problems: string[] }> {
+  const { window } = input
+  const stepOffsets = await loadStepOffsets(deps, input.id, [
+    window.from,
+    window.to,
+  ])
+  const from = resolveFrameTarget(window.from, stepOffsets)
+  const to = resolveFrameTarget(window.to, stepOffsets)
+  const problems = [from, to].flatMap((end) => (end.ok ? [] : [end.message]))
+  if (!(from.ok && to.ok)) {
+    return { targets: [], problems }
+  }
+
+  const fromMs = from.target.offsetMs
+  const toMs = to.target.offsetMs
+  if (toMs <= fromMs) {
     return {
       targets: [],
       problems: [
-        'The window needs `from` before `to`, each a time like "1:05", "45s" or a number of milliseconds.',
+        `The window needs \`from\` before \`to\`; ${describeTarget(from.target)} is not before ${describeTarget(to.target)}.`,
       ],
     }
   }
@@ -227,14 +256,7 @@ async function resolveTargets(
   deps: ToolDependencies,
   input: { at: FrameRequest[]; id: string }
 ): Promise<{ targets: FrameTarget[]; problems: string[] }> {
-  const needsSteps = input.at.some(
-    (value) => typeof value === "string" && STEP_WORD_PATTERN.test(value)
-  )
-  const stepOffsets = needsSteps
-    ? (await deps.reader.getDebuggerEvents(input.id)).actions.map(
-        (action) => action.offset
-      )
-    : []
+  const stepOffsets = await loadStepOffsets(deps, input.id, input.at)
 
   const targets: FrameTarget[] = []
   const problems: string[] = []

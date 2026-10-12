@@ -779,6 +779,49 @@ describe("get_video_frames", () => {
     expect(frames.heights).toEqual([360])
   })
 
+  it("spreads a window between two steps", async () => {
+    const frames = fakeFrames()
+    const { handler } = setup({
+      frames,
+      reader: makeReader({
+        reports: { rpt_1: video },
+        events: { rpt_1: events },
+      }),
+    })
+    const { result } = await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      window: { from: "step:2", to: "step:5", count: 4 },
+    })
+
+    expect(result.isError).toBeUndefined()
+    // Steps 2 and 5 are at 1000 and 4000 ms; both ends get the same 700 ms
+    // as a single step.
+    expect(frames.requests).toEqual([[1700, 2700, 3700, 4700]])
+  })
+
+  it("explains a window whose ends cannot be used", async () => {
+    const { handler } = setup({
+      frames: fakeFrames(),
+      reader: makeReader({
+        reports: { rpt_1: video },
+        events: { rpt_1: events },
+      }),
+    })
+    const missing = await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      window: { from: "step:2", to: "step:9" },
+    })
+    expect(missing.result.isError).toBe(true)
+    expect(missing.text).toContain("There is no step 9")
+
+    const backwards = await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      window: { from: "step:5", to: "0:01" },
+    })
+    expect(backwards.result.isError).toBe(true)
+    expect(backwards.text).toContain("is not before")
+  })
+
   it("takes bare numbers as milliseconds and refuses two modes at once", async () => {
     const frames = fakeFrames()
     const { handler } = setup({
