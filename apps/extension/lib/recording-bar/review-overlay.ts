@@ -24,6 +24,8 @@ export function openReviewOverlay(url: string): void {
   frame.src = url
   frame.title = "Crikket bug report"
   frame.allow = "clipboard-write"
+  // Keys go to the review (Escape closes it), not to the page underneath.
+  frame.addEventListener("load", () => frame.focus(), { once: true })
   // A long screenshot gets more room, to show at the size it had on the page.
   const maxWidth = new URL(url).searchParams.has(REVIEW_WIDE_QUERY_PARAM)
     ? 1600
@@ -34,6 +36,16 @@ export function openReviewOverlay(url: string): void {
   previousOverflow = document.documentElement.style.overflow
   document.documentElement.style.overflow = "hidden"
   document.documentElement.append(host)
+}
+
+// Hidden, not closed, so the review keeps what the user typed if it shows again.
+export function setReviewOverlayHidden(hidden: boolean): void {
+  const host = document.getElementById(OVERLAY_ID)
+  if (!host) return
+  host.style.display = hidden ? "none" : "flex"
+  document.documentElement.style.overflow = hidden
+    ? (previousOverflow ?? "")
+    : "hidden"
 }
 
 export function closeReviewOverlay(): void {

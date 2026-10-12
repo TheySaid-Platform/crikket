@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import type { TrimRange } from "@/components/trimmable-video"
 import type { CaptureType } from "@/hooks/use-recorder-init"
+import type { SavedCaptureEdits } from "@/lib/recording-store"
 import type { ScreenshotEdits } from "@/lib/screenshot-annotations"
 import {
   type BlurRegion,
@@ -72,6 +73,12 @@ export function useCaptureEdits() {
     setScreenshotEdits(null)
   }, [])
 
+  const restoreEdits = useCallback((saved: SavedCaptureEdits) => {
+    setEditedScreenshot(saved.editedScreenshot)
+    setVideoEdits(saved.videoEdits)
+    setScreenshotEdits(saved.screenshotEdits)
+  }, [])
+
   const prepareAttachment = useCallback(
     (captureType: CaptureType, capture: Blob, durationMs: number) => {
       if (
@@ -96,6 +103,7 @@ export function useCaptureEdits() {
     setVideoOverlays,
     applyScreenshotEdits,
     resetEdits,
+    restoreEdits,
     prepareAttachment,
   }
 }

@@ -97,6 +97,7 @@ function App() {
       <PopupCaptureActions
         fullPageProgress={fullPageProgress}
         hasFloatingBar={backgroundRecording !== null}
+        hasUnsentReport={showUnsentReport}
         instantReplayPanel={
           <InstantReplayPanel
             disabled={isBusy}

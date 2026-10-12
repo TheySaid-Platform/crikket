@@ -5,7 +5,11 @@ import {
   MIC_LEVEL_PORT_NAME,
 } from "@/lib/background-recording/protocol"
 import { TOGGLE_MIC_MESSAGE_TYPE } from "@/lib/capture-context"
-import { closeReviewOverlay, openReviewOverlay } from "./review-overlay"
+import {
+  closeReviewOverlay,
+  openReviewOverlay,
+  setReviewOverlayHidden,
+} from "./review-overlay"
 import { createRecordingUi, type RecordingUi } from "./ui"
 
 const REPLACE_EVENT = "crikket:recording-bar:replace"
@@ -131,15 +135,19 @@ export function startRecordingBar(): void {
     )
     .catch(() => undefined)
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    const change = changes[BACKGROUND_RECORDING_STORAGE_KEY]
-    if (!isActive || areaName !== "local" || !change) return
-    render((change.newValue as BackgroundRecordingState | undefined) ?? null)
-  })
-
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!isActive) return
     if (message?.type === BACKGROUND_RECORDING_MESSAGE.barPing) {
+      sendResponse({ ok: true })
+      return
+    }
+    // New state from the background worker.
+    if (message?.type === BACKGROUND_RECORDING_MESSAGE.barState) {
+      render((message.state as BackgroundRecordingState | null) ?? null)
+      return
+    }
+    if (message?.type === BACKGROUND_RECORDING_MESSAGE.hideReview) {
+      setReviewOverlayHidden(message.hidden === true)
       sendResponse({ ok: true })
       return
     }

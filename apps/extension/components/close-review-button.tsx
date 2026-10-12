@@ -1,4 +1,5 @@
 import { Button } from "@crikket/ui/components/ui/button"
+import { cn } from "@crikket/ui/lib/utils"
 import { X } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -57,36 +58,57 @@ export function CloseReviewButton({
       </Button>
 
       {isConfirming ? (
-        <div
-          className="absolute top-full left-0 z-20 mt-2 w-64 space-y-3 rounded-lg border bg-popover p-3 text-left text-popover-foreground shadow-lg"
-          role="alertdialog"
-        >
-          <div className="space-y-1">
-            <p className="font-medium text-sm">Discard this {captureLabel}?</p>
-            <p className="text-muted-foreground text-xs">
-              It has not been submitted yet.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={onDiscard}
-              size="sm"
-              type="button"
-              variant="destructive"
-            >
-              Discard
-            </Button>
-            <Button
-              onClick={() => setIsConfirming(false)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Keep editing
-            </Button>
-          </div>
-        </div>
+        <DiscardConfirm
+          captureLabel={captureLabel}
+          className="top-full left-0 mt-2"
+          onDiscard={onDiscard}
+          onKeep={() => setIsConfirming(false)}
+        />
       ) : null}
+    </div>
+  )
+}
+
+/** Asks before a capture that was not submitted is thrown away. */
+export function DiscardConfirm({
+  captureLabel,
+  className,
+  onDiscard,
+  onKeep,
+}: {
+  captureLabel: string
+  // Where it opens, next to the button that asked.
+  className: string
+  onDiscard: () => void
+  onKeep: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        "absolute z-20 w-64 space-y-3 rounded-lg border bg-popover p-3 text-left text-popover-foreground shadow-lg",
+        className
+      )}
+      role="alertdialog"
+    >
+      <div className="space-y-1">
+        <p className="font-medium text-sm">Discard this {captureLabel}?</p>
+        <p className="text-muted-foreground text-xs">
+          It has not been submitted yet.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <Button
+          onClick={onDiscard}
+          size="sm"
+          type="button"
+          variant="destructive"
+        >
+          Discard
+        </Button>
+        <Button onClick={onKeep} size="sm" type="button" variant="outline">
+          Keep editing
+        </Button>
+      </div>
     </div>
   )
 }

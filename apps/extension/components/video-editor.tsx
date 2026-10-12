@@ -20,6 +20,7 @@ import {
 } from "@/lib/annotations"
 import { getDrawingTiming } from "@/lib/drawing-timing"
 import type { PixelRect } from "@/lib/pixelate"
+import { clamp } from "@/lib/utils"
 import { primeVideoDuration } from "@/lib/video-duration"
 import type { BlurRegion } from "@/lib/video-edit"
 
@@ -36,9 +37,6 @@ const VIDEO_TOOLS: AnnotationTool[] = [
 const MIN_SHAPE_FRACTION = 0.005
 
 type FrameSize = { width: number; height: number }
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value))
 
 function toBlurRegion(rect: PixelRect, frame: FrameSize): BlurRegion {
   return {
@@ -149,6 +147,8 @@ export function VideoEditor({
         },
       ],
     }))
+    // Moved earlier at the end of the clip: show the frame where it starts.
+    if (timing.startMs !== Math.round(currentMs)) seekTo(timing.startMs)
   }
 
   const toFramePoint = (event: PointerEvent<HTMLElement>): Point => {

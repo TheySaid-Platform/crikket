@@ -86,35 +86,33 @@ export const readAndClearCaptureTabId = async (): Promise<number | null> => {
 const RECORDING_BADGES = {
   recording: { text: "REC", color: "#dc2626" },
   paused: { text: "II", color: "#d97706" },
+  // A capture failed; stays until the popup has shown why.
+  error: { text: "!", color: "#dc2626" },
+  // Nothing else to show, and every page is keeping its last minutes.
+  instantReplay: { text: "●", color: "#10b981" },
 } as const
 
-// Shown when nothing is recording: why the last recording failed (until the
-// popup shows it), or that every page is keeping its last minutes.
-const RECORDING_ERROR_BADGE = { text: "!", color: "#dc2626" }
-const INSTANT_REPLAY_BADGE = { text: "●", color: "#10b981" }
-
 export const setRecordingBadge = async (
-  status: keyof typeof RECORDING_BADGES | null
+  status: "recording" | "paused" | null
 ): Promise<void> => {
-  if (!status) {
-    const stored = await chrome.storage.local.get([
-      RECORDING_ERROR_STORAGE_KEY,
-      INSTANT_REPLAY_ENABLED_STORAGE_KEY,
-    ])
-    let idleBadge: { text: string; color: string } | null = null
-    if (typeof stored[RECORDING_ERROR_STORAGE_KEY] === "string") {
-      idleBadge = RECORDING_ERROR_BADGE
-    } else if (stored[INSTANT_REPLAY_ENABLED_STORAGE_KEY] === true) {
-      idleBadge = INSTANT_REPLAY_BADGE
-    }
-    if (idleBadge) {
-      await chrome.action.setBadgeBackgroundColor({ color: idleBadge.color })
-    }
-    await chrome.action.setBadgeText({ text: idleBadge?.text ?? "" })
+  const stored = status
+    ? {}
+    : await chrome.storage.local.get([
+        RECORDING_ERROR_STORAGE_KEY,
+        INSTANT_REPLAY_ENABLED_STORAGE_KEY,
+      ])
+  const shown =
+    status ??
+    (stored[RECORDING_ERROR_STORAGE_KEY] ? "error" : null) ??
+    (stored[INSTANT_REPLAY_ENABLED_STORAGE_KEY] === true
+      ? "instantReplay"
+      : null)
+  if (!shown) {
+    await chrome.action.setBadgeText({ text: "" })
     return
   }
 
-  const badge = RECORDING_BADGES[status]
+  const badge = RECORDING_BADGES[shown]
   await chrome.action.setBadgeBackgroundColor({ color: badge.color })
   await chrome.action.setBadgeText({ text: badge.text })
 }

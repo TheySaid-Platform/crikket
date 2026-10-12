@@ -270,6 +270,9 @@ async function openReplayReview(input: {
   captureType: "video" | "replay"
 }): Promise<void> {
   await backUpLogs(input.sessionId)
+  // Like a new recording or screenshot that worked, this replaces an unsent
+  // review.
+  await abandonPendingReview()
   const tab = await chrome.tabs.get(input.tabId)
   await chrome.storage.local.set({
     [CAPTURE_CONTEXT_STORAGE_KEY]: sanitizeCaptureContext({
@@ -330,8 +333,6 @@ export function saveInstantReplay(tabId: number): Promise<void> {
     if (await isRecording()) {
       throw new Error("Finish the recording first.")
     }
-    // Like a new recording or screenshot, this replaces an unsent review.
-    await abandonPendingReview()
 
     const video = await readReplayVideo()
     if (video && (video.source === "display" || video.tabId === tabId)) {
