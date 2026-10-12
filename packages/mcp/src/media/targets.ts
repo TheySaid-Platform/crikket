@@ -23,7 +23,8 @@ export type FrameTargetResult =
   | { ok: false; label: string; message: string }
 
 /**
- * Turns "1:05", "1:05.3", "45s", "1500ms", 45 (seconds) or "step:7" into an
+ * Turns "1:05", "1:05.3", "45s", "1500ms", 45000 or "45000" (bare numbers are
+ * milliseconds, like every offsetMs the tools return) or "step:7" into an
  * offset in the video. Step numbers are the ones get_reproduction_steps and
  * get_bug_context show.
  */
@@ -62,18 +63,16 @@ export function resolveFrameTarget(
     return {
       ok: false,
       label,
-      message: `"${label.slice(0, 40)}" is not a time or step. Use a time like "1:05", "45s" or 45, or a step like "step:7".`,
+      message: `"${label.slice(0, 40)}" is not a time or step. Use a time like "1:05", "45s" or 45000 (ms), or a step like "step:7".`,
     }
   }
 
   return { ok: true, target: { label, offsetMs, step: null } }
 }
 
-function parseTimeMs(request: FrameRequest): number | null {
+export function parseTimeMs(request: FrameRequest): number | null {
   if (typeof request === "number") {
-    return Number.isFinite(request) && request >= 0
-      ? Math.round(request * 1000)
-      : null
+    return Number.isFinite(request) && request >= 0 ? Math.round(request) : null
   }
 
   const value = request.trim()
@@ -89,15 +88,15 @@ function parseTimeMs(request: FrameRequest): number | null {
     return Math.round(((hours * 60 + minutes) * 60 + seconds) * 1000)
   }
 
-  const seconds =
-    SECONDS_PATTERN.exec(value) ?? PLAIN_NUMBER_PATTERN.exec(value)
+  const seconds = SECONDS_PATTERN.exec(value)
   if (seconds) {
-    return Math.round(Number(seconds[1] ?? seconds[0]) * 1000)
+    return Math.round(Number(seconds[1]) * 1000)
   }
 
-  const milliseconds = MILLISECONDS_PATTERN.exec(value)
+  const milliseconds =
+    MILLISECONDS_PATTERN.exec(value) ?? PLAIN_NUMBER_PATTERN.exec(value)
   if (milliseconds) {
-    return Number(milliseconds[1])
+    return Math.round(Number(milliseconds[1] ?? milliseconds[0]))
   }
 
   return null

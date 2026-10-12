@@ -9,7 +9,11 @@ import { Button } from "@crikket/ui/components/ui/button"
 import { TriangleAlert } from "lucide-react"
 
 import type { CreatedMcpAccessKey } from "../types"
-import { buildClaudeCodeCommand, buildCursorConfig } from "../utils"
+import {
+  buildClaudeCodeCommand,
+  buildCursorConfig,
+  SHELL_HISTORY_WARNING,
+} from "../utils"
 import { SnippetBlock } from "./snippet-block"
 
 interface CreatedKeyPanelProps {
@@ -42,6 +46,7 @@ export function CreatedKeyPanel({
       <SnippetBlock
         copyLabel="Copy Claude Code command"
         label="Claude Code"
+        note={SHELL_HISTORY_WARNING}
         value={buildClaudeCodeCommand(endpointUrl, createdKey.key)}
       />
       <SnippetBlock

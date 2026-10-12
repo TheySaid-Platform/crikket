@@ -1,13 +1,17 @@
+import { copyFile, mkdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { type CachedFrame, MediaCache } from "./cache"
 import {
+  buildGrid,
   convertScreenshot,
-  extractVideoFrames,
+  extractFrameAt,
   type FfmpegOptions,
   findFfmpegOptions,
   MediaToolUnavailableError,
+  probeDurationMs,
+  remuxForSeeking,
 } from "./ffmpeg"
 import { createGate } from "./gate"
 
@@ -16,6 +20,10 @@ const CACHE_MAX_AGE_MS = 30 * 60 * 1000
 const FFMPEG_TIMEOUT_MS = 60 * 1000
 /** How long a request waits for another video to finish in this pod. */
 const GATE_WAIT_MS = 45 * 1000
+const SEEKABLE_VIDEO = "video.mkv"
+const VIDEO_META = "video.json"
+export const OVERVIEW_TILE_HEIGHT = 180
+const OVERVIEW_COLUMNS = 4
 
 export interface VideoFrame {
   targetMs: number
@@ -24,25 +32,50 @@ export interface VideoFrame {
   image: Uint8Array | null
 }
 
+export interface VideoOverview {
+  /** Frame times in reading order: left to right, then top to bottom. */
+  framesMs: number[]
+  columns: number
+  rows: number
+  image: Uint8Array
+}
+
 export interface VideoFrameService {
   getVideoFrames(input: {
     reportId: string
     captureKey: string
     targetsMs: number[]
-  }): Promise<VideoFrame[]>
+    height: number
+  }): Promise<{ durationMs: number | null; frames: VideoFrame[] }>
+  getOverview(input: {
+    reportId: string
+    captureKey: string
+    count: number
+  }): Promise<{ durationMs: number | null; overview: VideoOverview | null }>
   getScreenshot(input: {
     reportId: string
     captureKey: string
   }): Promise<Uint8Array>
 }
 
+interface SeekableVideo {
+  path: string
+  durationMs: number | null
+}
+
 /**
- * Cuts still frames from a report's video on demand. Everything heavy is
- * bounded: one ffmpeg at a time per pod at low priority with a timeout, and
- * a temp-disk cache so repeat questions cost nothing.
+ * Cuts still frames from a report's video on demand. The first request for
+ * a report streams the video to the pod's temp disk and copies it into a
+ * seekable file once; after that each frame decodes only from its nearest
+ * keyframe. One ffmpeg job runs at a time per pod, at low priority, with a
+ * timeout, and frames are cached so repeat questions cost nothing.
  */
 export function createVideoFrameService(input: {
-  loadCapture: (captureKey: string) => Promise<Uint8Array>
+  /** Streams a stored capture into a local file. */
+  downloadCapture: (
+    captureKey: string,
+    destinationPath: string
+  ) => Promise<void>
   cacheDir?: string
   ffmpeg?: FfmpegOptions | null
 }): VideoFrameService {
@@ -66,88 +99,226 @@ export function createVideoFrameService(input: {
     return ffmpeg
   }
 
-  const ensureCapture = async (
-    reportId: string,
-    captureKey: string,
-    name: string
-  ): Promise<string> => {
-    const path = join(cache.reportDir(reportId), name)
-    if (!(await cache.hasFile(reportId, name))) {
-      await cache.writeFile(reportId, name, await input.loadCapture(captureKey))
+  const readDuration = async (reportId: string): Promise<number | null> => {
+    const data = await cache.readFile(reportId, VIDEO_META)
+    if (!data) {
+      return null
     }
-    return path
+    const meta = JSON.parse(new TextDecoder().decode(data)) as {
+      durationMs?: number | null
+    }
+    return meta.durationMs ?? null
   }
 
-  const cacheMissingFrames = async (frameInput: {
-    reportId: string
+  /** Downloads and remuxes once; returns the seekable file and its length. */
+  const ensureSeekableVideo = async (
+    options: FfmpegOptions,
+    reportId: string,
     captureKey: string
-    index: Record<string, CachedFrame>
-    missing: number[]
-    options: FfmpegOptions
-  }) => {
-    const { reportId, captureKey, index, missing, options } = frameInput
-    // The download is gated too, so a pod never holds more than one video in
-    // memory at a time.
-    const extracted = await runGated(GATE_WAIT_MS, async () =>
-      extractVideoFrames({
-        options,
-        videoPath: await ensureCapture(reportId, captureKey, "video.webm"),
-        workDir: join(cache.reportDir(reportId), "work"),
-        targetsMs: missing,
-      })
+  ): Promise<SeekableVideo> => {
+    const path = join(cache.reportDir(reportId), SEEKABLE_VIDEO)
+    if (await cache.hasFile(reportId, SEEKABLE_VIDEO)) {
+      return { path, durationMs: await readDuration(reportId) }
+    }
+
+    const sourcePath = await cache.writeFileWith(
+      reportId,
+      "source.webm",
+      (temporaryPath) => input.downloadCapture(captureKey, temporaryPath)
     )
-    for (const targetMs of missing) {
-      const frame = extracted.get(targetMs) ?? null
-      if (frame) {
-        await cache.writeFile(reportId, `${targetMs}.jpg`, frame.image)
+    try {
+      await cache.writeFileWith(reportId, SEEKABLE_VIDEO, (temporaryPath) =>
+        remuxForSeeking({ options, sourcePath, outputPath: temporaryPath })
+      )
+    } finally {
+      await rm(sourcePath, { force: true })
+    }
+
+    const durationMs = await probeDurationMs({ options, path })
+    await cache.writeFile(
+      reportId,
+      VIDEO_META,
+      new TextEncoder().encode(JSON.stringify({ durationMs }))
+    )
+    return { path, durationMs }
+  }
+
+  const framePath = (reportId: string, height: number, targetMs: number) =>
+    join(cache.reportDir(reportId), `frame-${height}-${targetMs}.jpg`)
+
+  /** Cuts the frames not cached yet, updating `index` in place. */
+  const cutMissingFrames = async (frameInput: {
+    options: FfmpegOptions
+    reportId: string
+    video: SeekableVideo
+    targetsMs: number[]
+    height: number
+    index: Record<string, CachedFrame>
+  }) => {
+    const { options, reportId, video, height, index } = frameInput
+    for (const targetMs of frameInput.targetsMs) {
+      const key = `${height}:${targetMs}`
+      if (key in index) {
+        continue
       }
-      index[String(targetMs)] = { frameMs: frame?.frameMs ?? null }
+      if (video.durationMs !== null && targetMs > video.durationMs) {
+        index[key] = { frameMs: null }
+        continue
+      }
+      const finalPath = framePath(reportId, height, targetMs)
+      const workPath = `${finalPath}.work.jpg`
+      const frameMs = await extractFrameAt({
+        options,
+        videoPath: video.path,
+        targetMs,
+        height,
+        outputPath: workPath,
+      })
+      if (frameMs === null) {
+        await rm(workPath, { force: true })
+      } else {
+        await rename(workPath, finalPath)
+      }
+      index[key] = { frameMs }
     }
     await cache.writeFrameIndex(reportId, index)
-    await cache.prune(reportId)
   }
 
-  const readCachedFrames = async (
+  const readFrames = async (
     reportId: string,
     targetsMs: number[],
+    height: number,
     index: Record<string, CachedFrame>
   ): Promise<VideoFrame[]> => {
     const frames: VideoFrame[] = []
     for (const targetMs of targetsMs) {
-      const frameMs = index[String(targetMs)]?.frameMs ?? null
+      const frameMs = index[`${height}:${targetMs}`]?.frameMs ?? null
       frames.push({
         targetMs,
         frameMs,
         image:
           frameMs === null
             ? null
-            : await cache.readFile(reportId, `${targetMs}.jpg`),
+            : await cache.readFile(reportId, `frame-${height}-${targetMs}.jpg`),
       })
     }
     return frames
   }
 
+  const buildOverview = async (
+    options: FfmpegOptions,
+    reportId: string,
+    video: SeekableVideo,
+    count: number
+  ): Promise<{ durationMs: number | null; overview: VideoOverview | null }> => {
+    if (!video.durationMs) {
+      return { durationMs: video.durationMs, overview: null }
+    }
+    const durationMs = video.durationMs
+    const targetsMs = Array.from({ length: count }, (_, position) =>
+      Math.floor(((position + 0.5) * durationMs) / count)
+    )
+    const index = await cache.readFrameIndex(reportId)
+    await cutMissingFrames({
+      options,
+      reportId,
+      video,
+      targetsMs,
+      height: OVERVIEW_TILE_HEIGHT,
+      index,
+    })
+    const frames = targetsMs
+      .map((targetMs) => ({
+        targetMs,
+        frameMs: index[`${OVERVIEW_TILE_HEIGHT}:${targetMs}`]?.frameMs ?? null,
+      }))
+      .filter((frame) => frame.frameMs !== null)
+    if (frames.length === 0) {
+      return { durationMs, overview: null }
+    }
+
+    const columns = Math.min(OVERVIEW_COLUMNS, frames.length)
+    const rows = Math.ceil(frames.length / columns)
+    const gridDir = join(cache.reportDir(reportId), "grid")
+    await rm(gridDir, { recursive: true, force: true })
+    await mkdir(gridDir, { recursive: true })
+    try {
+      for (const [position, frame] of frames.entries()) {
+        await copyFile(
+          framePath(reportId, OVERVIEW_TILE_HEIGHT, frame.targetMs),
+          join(gridDir, `${String(position + 1).padStart(2, "0")}.jpg`)
+        )
+      }
+      const image = await buildGrid({
+        options,
+        framesDir: gridDir,
+        columns,
+        rows,
+        outputPath: join(gridDir, "overview.jpg"),
+      })
+      return {
+        durationMs,
+        overview: {
+          framesMs: frames.map((frame) => frame.frameMs ?? 0),
+          columns,
+          rows,
+          image,
+        },
+      }
+    } finally {
+      await rm(gridDir, { recursive: true, force: true })
+    }
+  }
+
   return {
-    getVideoFrames: ({ reportId, captureKey, targetsMs }) =>
+    getVideoFrames: ({ reportId, captureKey, targetsMs, height }) =>
       cache.withReportLock(reportId, async () => {
         const options = requireFfmpeg()
         await cache.touch(reportId)
         const index = await cache.readFrameIndex(reportId)
-        const missing = [...new Set(targetsMs)].filter(
-          (targetMs) => !(String(targetMs) in index)
+        const allCached = targetsMs.every(
+          (targetMs) => `${height}:${targetMs}` in index
         )
 
-        if (missing.length > 0) {
-          await cacheMissingFrames({
-            reportId,
-            captureKey,
-            index,
-            missing,
-            options,
+        if (!allCached) {
+          await runGated(GATE_WAIT_MS, async () => {
+            const video = await ensureSeekableVideo(
+              options,
+              reportId,
+              captureKey
+            )
+            await cutMissingFrames({
+              options,
+              reportId,
+              video,
+              targetsMs,
+              height,
+              index,
+            })
           })
+          await cache.prune(reportId)
         }
 
-        return await readCachedFrames(reportId, targetsMs, index)
+        return {
+          durationMs: await readDuration(reportId),
+          frames: await readFrames(reportId, targetsMs, height, index),
+        }
+      }),
+
+    getOverview: ({ reportId, captureKey, count }) =>
+      cache.withReportLock(reportId, async () => {
+        const options = requireFfmpeg()
+        await cache.touch(reportId)
+        const result = await runGated(GATE_WAIT_MS, async () =>
+          buildOverview(
+            options,
+            reportId,
+            await ensureSeekableVideo(options, reportId, captureKey),
+            count
+          )
+        )
+        await cache.prune(reportId)
+        return result
       }),
 
     getScreenshot: ({ reportId, captureKey }) =>
@@ -159,17 +330,18 @@ export function createVideoFrameService(input: {
           return cached
         }
 
-        const image = await runGated(GATE_WAIT_MS, async () =>
-          convertScreenshot({
+        const image = await runGated(GATE_WAIT_MS, async () => {
+          const imagePath = await cache.writeFileWith(
+            reportId,
+            "screenshot-original",
+            (temporaryPath) => input.downloadCapture(captureKey, temporaryPath)
+          )
+          return convertScreenshot({
             options,
-            imagePath: await ensureCapture(
-              reportId,
-              captureKey,
-              "screenshot-original"
-            ),
+            imagePath,
             outputPath: join(cache.reportDir(reportId), "screenshot.work.jpg"),
           })
-        )
+        })
         await cache.writeFile(reportId, "screenshot.jpg", image)
         await cache.prune(reportId)
         return image

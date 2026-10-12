@@ -5,10 +5,16 @@ import { CopyValueButton } from "../../public-keys/components/copy-value-button"
 interface SnippetBlockProps {
   copyLabel: string
   label: string
+  note?: string
   value: string
 }
 
-export function SnippetBlock({ copyLabel, label, value }: SnippetBlockProps) {
+export function SnippetBlock({
+  copyLabel,
+  label,
+  note,
+  value,
+}: SnippetBlockProps) {
   return (
     <div className="space-y-1.5">
       <p className="font-medium text-xs">{label}</p>
@@ -18,6 +24,7 @@ export function SnippetBlock({ copyLabel, label, value }: SnippetBlockProps) {
         </pre>
         <CopyValueButton ariaLabel={copyLabel} value={value} />
       </div>
+      {note ? <p className="text-muted-foreground text-xs">{note}</p> : null}
     </div>
   )
 }

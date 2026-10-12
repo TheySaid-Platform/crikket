@@ -5,10 +5,12 @@ import { z } from "zod"
 import { formatOffset } from "../format"
 import {
   describeTarget,
+  type FrameRequest,
   type FrameTarget,
+  parseTimeMs,
   resolveFrameTarget,
 } from "../media/targets"
-import type { VideoFrame } from "../media/video-frames"
+import type { VideoFrame, VideoFrameService } from "../media/video-frames"
 import {
   READ_ONLY_ANNOTATIONS,
   reportInputSchema,
@@ -18,12 +20,19 @@ import {
   ToolInputError,
 } from "./shared"
 
-const MAX_FRAMES_PER_CALL = 6
+const MAX_FRAMES_PER_CALL = 12
+const DEFAULT_WINDOW_COUNT = 6
+const DEFAULT_OVERVIEW_COUNT = 12
+const SIZES = [360, 720, 1080] as const
+const DEFAULT_SIZE = 720
 const STEP_WORD_PATTERN = /step/i
-/** Used when the caller does not say which moments to look at. */
-const DEFAULT_SPREAD = [0.1, 0.35, 0.6, 0.85]
 
 type Content = CallToolResult["content"][number]
+
+const momentSchema = z.union([
+  z.string().trim().min(1).max(40),
+  z.number().int().min(0),
+])
 
 export function registerGetVideoFramesTool(
   server: McpServer,
@@ -34,16 +43,38 @@ export function registerGetVideoFramesTool(
     {
       title: "Get video frames",
       description:
-        'See the screen. Returns still images from a bug report\'s video at up to 6 moments: a time like "1:05", "45s" or 45 (seconds), or a step like "step:7" (taken just after the step, to show its result). Steps are numbered as in get_bug_context and get_reproduction_steps. For a screenshot report it returns the screenshot. The recording\'s audio is not available.',
+        'See the screen of a bug report\'s video. Pick one mode: `overview` (default) returns one grid image of 12 moments across the whole video, the fastest way to orient; `at` returns up to 12 frames at given moments; `window` returns evenly spaced frames between two moments. A moment is a number of milliseconds (like offsetMs in the other tools), a time like "1:05" or "45s", or a step like "step:7" (taken just after the step, to show its result). For a screenshot report it returns the screenshot. The recording\'s audio is not available.',
       inputSchema: {
         report: reportInputSchema,
+        overview: z
+          .boolean()
+          .optional()
+          .describe("One grid image of 12 moments spread across the video."),
         at: z
-          .array(z.union([z.string().trim().max(40), z.number().min(0)]))
+          .array(momentSchema)
           .min(1)
           .max(MAX_FRAMES_PER_CALL)
           .optional()
+          .describe('Moments to show, e.g. ["step:3", 45000, "1:05"].'),
+        window: z
+          .object({
+            from: momentSchema,
+            to: momentSchema,
+            count: z
+              .number()
+              .int()
+              .min(2)
+              .max(MAX_FRAMES_PER_CALL)
+              .optional()
+              .describe(`Default: ${DEFAULT_WINDOW_COUNT}.`),
+          })
+          .optional()
+          .describe("Evenly spaced frames from `from` to `to`."),
+        size: z
+          .union([z.literal(360), z.literal(720), z.literal(1080)])
+          .optional()
           .describe(
-            'Moments to show, e.g. ["step:3", "1:05", 12.5]. If left out, four moments spread across the video.'
+            `Frame height in pixels for \`at\` and \`window\`: ${SIZES.join(", ")}. Default: ${DEFAULT_SIZE}.`
           ),
       },
       annotations: READ_ONLY_ANNOTATIONS,
@@ -57,54 +88,165 @@ export function registerGetVideoFramesTool(
           )
         }
 
+        const modeCount = countModes(input)
         const id = resolveReportId(input.report)
         // Enforces access, like every other read.
         const source = await deps.reader.getCaptureSource(id)
-        if (!source.captureKey) {
-          throw new ToolInputError(
-            "This bug report has no video or screenshot attached."
-          )
-        }
-
-        if (source.attachmentType === "replay") {
-          throw new ToolInputError(
-            "This report is an instant replay (a recording of the page itself, not a video), so there are no video frames. Use get_reproduction_steps, get_console_logs and get_network_requests instead."
-          )
-        }
+        const captureKey = requireVideoOrScreenshot(source)
 
         if (source.attachmentType === "screenshot") {
-          const image = await frames.getScreenshot({
-            reportId: id,
-            captureKey: source.captureKey,
-          })
-          return screenshotResult(id, image, Boolean(input.at))
+          const image = await frames.getScreenshot({ reportId: id, captureKey })
+          return screenshotResult(id, image, modeCount > 0)
         }
 
-        const { targets, problems } = await resolveTargets(deps, {
-          at: input.at,
-          durationMs: source.durationMs,
-          id,
-        })
+        if (!(input.at || input.window)) {
+          return overviewResult(frames, { id, captureKey })
+        }
+
+        const { targets, problems } = input.window
+          ? resolveWindow(input.window)
+          : await resolveTargets(deps, { at: input.at ?? [], id })
         if (targets.length === 0) {
           throw new ToolInputError(problems.join(" "))
         }
 
-        const results = await frames.getVideoFrames({
+        const result = await frames.getVideoFrames({
           reportId: id,
-          captureKey: source.captureKey,
+          captureKey,
           targetsMs: targets.map((target) => target.offsetMs),
+          height: input.size ?? DEFAULT_SIZE,
         })
 
         return framesResult({
-          durationMs: source.durationMs,
+          durationMs: result.durationMs ?? source.durationMs,
           id,
           problems,
           requested: input.at?.length ?? targets.length,
-          results,
+          results: result.frames,
           targets,
         })
       })
   )
+}
+
+function countModes(input: {
+  overview?: boolean
+  at?: unknown
+  window?: unknown
+}): number {
+  const count = [input.overview, input.at, input.window].filter(
+    (mode) => mode !== undefined && mode !== false
+  ).length
+  if (count > 1) {
+    throw new ToolInputError(
+      "Use one of `overview`, `at` or `window` per call."
+    )
+  }
+  return count
+}
+
+/** Returns the capture key, or explains why there are no frames to cut. */
+function requireVideoOrScreenshot(source: {
+  attachmentType: string | null
+  captureKey: string | null
+}): string {
+  if (!source.captureKey) {
+    throw new ToolInputError(
+      "This bug report has no video or screenshot attached."
+    )
+  }
+  if (source.attachmentType === "replay") {
+    throw new ToolInputError(
+      "This report is an instant replay (a recording of the page itself, not a video), so there are no video frames. Use get_reproduction_steps, get_console_logs and get_network_requests instead."
+    )
+  }
+  return source.captureKey
+}
+
+async function overviewResult(
+  frames: VideoFrameService,
+  input: { id: string; captureKey: string }
+): Promise<CallToolResult> {
+  const { durationMs, overview } = await frames.getOverview({
+    reportId: input.id,
+    captureKey: input.captureKey,
+    count: DEFAULT_OVERVIEW_COUNT,
+  })
+  if (!overview) {
+    throw new ToolInputError(
+      'Could not read this video\'s length, so no overview can be made. Ask for moments with `at`, e.g. ["0:05", "step:3"].'
+    )
+  }
+
+  const rows = Array.from({ length: overview.rows }, (_, row) =>
+    overview.framesMs
+      .slice(row * overview.columns, (row + 1) * overview.columns)
+      .map((frameMs) => `${formatOffset(frameMs)} (${frameMs} ms)`)
+      .join(", ")
+  )
+  const length = durationMs ? `, ${formatOffset(durationMs)} long` : ""
+  const text = [
+    `Overview of bug report ${input.id}${length}: ${overview.framesMs.length} frames in a ${overview.columns} x ${overview.rows} grid, read left to right, top to bottom.`,
+    ...rows.map((times, row) => `Row ${row + 1}: ${times}.`),
+    "Ask for a closer look with `at` or `window`.",
+  ].join("\n")
+
+  return {
+    content: [{ type: "text", text }, imageContent(overview.image)],
+  }
+}
+
+function resolveWindow(window: {
+  from: FrameRequest
+  to: FrameRequest
+  count?: number
+}): { targets: FrameTarget[]; problems: string[] } {
+  const fromMs = parseTimeMs(window.from)
+  const toMs = parseTimeMs(window.to)
+  if (fromMs === null || toMs === null || toMs <= fromMs) {
+    return {
+      targets: [],
+      problems: [
+        'The window needs `from` before `to`, each a time like "1:05", "45s" or a number of milliseconds.',
+      ],
+    }
+  }
+
+  const count = window.count ?? DEFAULT_WINDOW_COUNT
+  const stepMs = (toMs - fromMs) / (count - 1)
+  return {
+    targets: Array.from({ length: count }, (_, index) => {
+      const offsetMs = Math.round(fromMs + stepMs * index)
+      return { label: formatOffset(offsetMs) ?? "", offsetMs, step: null }
+    }),
+    problems: [],
+  }
+}
+
+async function resolveTargets(
+  deps: ToolDependencies,
+  input: { at: FrameRequest[]; id: string }
+): Promise<{ targets: FrameTarget[]; problems: string[] }> {
+  const needsSteps = input.at.some(
+    (value) => typeof value === "string" && STEP_WORD_PATTERN.test(value)
+  )
+  const stepOffsets = needsSteps
+    ? (await deps.reader.getDebuggerEvents(input.id)).actions.map(
+        (action) => action.offset
+      )
+    : []
+
+  const targets: FrameTarget[] = []
+  const problems: string[] = []
+  for (const value of input.at) {
+    const resolved = resolveFrameTarget(value, stepOffsets)
+    if (resolved.ok) {
+      targets.push(resolved.target)
+    } else {
+      problems.push(resolved.message)
+    }
+  }
+  return { targets, problems }
 }
 
 function screenshotResult(
@@ -147,7 +289,7 @@ function framesResult(input: {
     }
     content.push({
       type: "text",
-      text: `${describeTarget(target)}: frame at ${formatOffset(result.frameMs)}`,
+      text: `${describeTarget(target)}: frame at ${formatOffset(result.frameMs)} (${result.frameMs} ms)`,
     })
     content.push(imageContent(result.image))
   }
@@ -158,48 +300,6 @@ function framesResult(input: {
     ...problems,
   ].join(" ")
   return { content: [{ type: "text", text: header }, ...content] }
-}
-
-async function resolveTargets(
-  deps: ToolDependencies,
-  input: { at?: (string | number)[]; durationMs: number | null; id: string }
-): Promise<{ targets: FrameTarget[]; problems: string[] }> {
-  if (!input.at) {
-    if (!input.durationMs) {
-      throw new ToolInputError(
-        'Say which moments to show with `at`, e.g. ["step:3", "0:45"]; this video\'s length is unknown.'
-      )
-    }
-    const durationMs = input.durationMs
-    return {
-      targets: DEFAULT_SPREAD.map((share) => {
-        const offsetMs = Math.round(durationMs * share)
-        return { label: formatOffset(offsetMs) ?? "", offsetMs, step: null }
-      }),
-      problems: [],
-    }
-  }
-
-  const needsSteps = input.at.some(
-    (value) => typeof value === "string" && STEP_WORD_PATTERN.test(value)
-  )
-  const stepOffsets = needsSteps
-    ? (await deps.reader.getDebuggerEvents(input.id)).actions.map(
-        (action) => action.offset
-      )
-    : []
-
-  const targets: FrameTarget[] = []
-  const problems: string[] = []
-  for (const value of input.at) {
-    const resolved = resolveFrameTarget(value, stepOffsets)
-    if (resolved.ok) {
-      targets.push(resolved.target)
-    } else {
-      problems.push(resolved.message)
-    }
-  }
-  return { targets, problems }
 }
 
 function imageContent(image: Uint8Array): Content {

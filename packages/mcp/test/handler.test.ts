@@ -337,6 +337,42 @@ describe("MCP tools", () => {
     ).toHaveLength(6)
   })
 
+  it("get_bug_context keeps the first error whole, inlines failed bodies and flags dropped items", async () => {
+    const events = makeEvents({ errors: 3, messageLength: 3000 })
+    const reader = makeReader({
+      reports: {
+        rpt_1: makeReport({
+          metadata: {
+            duration: "1:00",
+            debuggerSummary: { actions: 0, logs: 2503, networkRequests: 4 },
+          },
+        }),
+      },
+      events: { rpt_1: events },
+      requests: { rpt_1: makeRequests({ total: 4, failEvery: 2 }) },
+      bodies: { req_0: { requestBody: null, responseBody: "x".repeat(5000) } },
+    })
+    const { handler } = setup({ reader })
+    const context = (
+      await callTool(handler, "get_bug_context", { report: "rpt_1" })
+    ).json()
+
+    // The first error keeps its whole message and its details.
+    expect(context.firstErrorPerTab).toHaveLength(1)
+    expect(context.firstErrorPerTab[0].message.length).toBeGreaterThan(3000)
+    expect(context.firstErrorPerTab[0].details).toEqual({
+      stack: "at app.js:0",
+    })
+    expect(context.consoleErrorsAndWarnings[0].message.length).toBeLessThan(700)
+    // Failed requests carry their bodies, cut to fit.
+    expect(context.failedNetworkRequests[0].responseBody).toContain(
+      "more characters"
+    )
+    expect(context.failedNetworkRequests[0].offsetMs).toBe(0)
+    expect(context.summary.capturedButNotStored).toEqual({ logs: 2500 })
+    expect(context.notes.join(" ")).toContain("2500 console logs")
+  })
+
   it("get_bug_context warns when debugger data is still processing", async () => {
     const reader = makeReader({
       reports: { rpt_1: makeReport({ debuggerIngestionStatus: "processing" }) },
@@ -371,16 +407,20 @@ describe("MCP tools", () => {
     })
   })
 
-  it("get_network_requests filters failed requests and method across pages", async () => {
+  it("get_network_requests filters across pages and inlines failed bodies", async () => {
     const reader = makeReader({
       reports: { rpt_1: report },
       requests: { rpt_1: makeRequests({ total: 450, failEvery: 10 }) },
+      bodies: {
+        req_0: { requestBody: '{"a":1}', responseBody: "boom" },
+        req_1: { requestBody: null, responseBody: "fine" },
+      },
     })
     const { handler } = setup({ reader })
     const { json } = await callTool(handler, "get_network_requests", {
       report: "rpt_1",
-      failedOnly: true,
-      method: "post",
+      statusCodes: ["5xx"],
+      methods: ["post", "PUT"],
       limit: 200,
     })
     const page = json()
@@ -393,6 +433,57 @@ describe("MCP tools", () => {
           item.method === "POST" && item.status === 500
       )
     ).toBe(true)
+    expect(page.items[0]).toMatchObject({
+      id: "req_0",
+      offsetMs: 0,
+      responseBody: "boom",
+    })
+    expect(page.warning).toBeUndefined()
+
+    const bad = await callTool(handler, "get_network_requests", {
+      report: "rpt_1",
+      statusCodes: ["server errors"],
+    })
+    expect(bad.result.isError).toBe(true)
+  })
+
+  it("get_network_requests drops duplicate rows and says when rows are missing", async () => {
+    const base = makeReader({
+      reports: { rpt_1: report },
+      requests: { rpt_1: makeRequests({ total: 300 }) },
+    })
+    const reader = {
+      ...base,
+      // An unstable page order: page 2 repeats a row from page 1 and the
+      // total says one more row exists than any page returns.
+      getNetworkRequestsPage: async (
+        pageInput: Parameters<typeof base.getNetworkRequestsPage>[0]
+      ) => {
+        const page = await base.getNetworkRequestsPage(pageInput)
+        return {
+          items:
+            pageInput.page === 2
+              ? [
+                  page.items[0] ?? makeRequests({ total: 1 })[0]!,
+                  ...page.items,
+                ].slice(0, 100)
+              : page.items,
+          pagination: { ...page.pagination, totalItems: 301 },
+        }
+      },
+    }
+    const { handler } = setup({ reader })
+    const { json } = await callTool(handler, "get_network_requests", {
+      report: "rpt_1",
+      bodies: "none",
+      limit: 200,
+      offset: 200,
+    })
+    const page = json()
+
+    const ids = page.items.map((item: { id: string }) => item.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(page.warning).toContain("could not be loaded")
   })
 
   it("get_network_request_details returns headers and capped bodies", async () => {
@@ -561,23 +652,37 @@ const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
 function fakeFrames(options?: {
   frameEndsAtMs?: number
   failWith?: Error
-}): VideoFrameService & { requests: number[][] } {
+}): VideoFrameService & { requests: number[][]; heights: number[] } {
   const requests: number[][] = []
+  const heights: number[] = []
   return {
     requests,
-    getVideoFrames: ({ targetsMs }) => {
+    heights,
+    getVideoFrames: ({ targetsMs, height }) => {
       requests.push(targetsMs)
+      heights.push(height)
       if (options?.failWith) {
         return Promise.reject(options.failWith)
       }
-      return Promise.resolve(
-        targetsMs.map((targetMs) =>
+      return Promise.resolve({
+        durationMs: options?.frameEndsAtMs ?? 60_000,
+        frames: targetsMs.map((targetMs) =>
           targetMs > (options?.frameEndsAtMs ?? Number.POSITIVE_INFINITY)
             ? { targetMs, frameMs: null, image: null }
             : { targetMs, frameMs: targetMs + 13, image: JPEG }
-        )
-      )
+        ),
+      })
     },
+    getOverview: ({ count }) =>
+      Promise.resolve({
+        durationMs: 60_000,
+        overview: {
+          framesMs: Array.from({ length: count }, (_, index) => index * 5000),
+          columns: 4,
+          rows: Math.ceil(count / 4),
+          image: JPEG,
+        },
+      }),
     getScreenshot: () => Promise.resolve(JPEG),
   }
 }
@@ -612,7 +717,7 @@ describe("get_video_frames", () => {
     ])
     expect(result.content[0]?.text).toContain("showing 2 of 2")
     expect(result.content[1]?.text).toBe(
-      "step 3 (0:02.7, just after the step): frame at 0:02.7"
+      "step 3 (0:02.7, just after the step): frame at 0:02.7 (2713 ms)"
     )
     expect(result.content[2]).toMatchObject({
       type: "image",
@@ -640,21 +745,59 @@ describe("get_video_frames", () => {
     const header = result.content[0]?.text ?? ""
     expect(header).toContain("showing 1 of 3")
     expect(header).toContain("There is no step 9")
-    expect(header).toContain("past the end of the video (1:00.0 long)")
+    expect(header).toContain("past the end of the video (0:59.0 long)")
   })
 
-  it("spreads four moments over the video when none are given", async () => {
+  it("returns an overview grid when no moments are given", async () => {
+    const { handler } = setup({
+      frames: fakeFrames(),
+      reader: makeReader({ reports: { rpt_1: video } }),
+    })
+    const { result } = await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+    })
+
+    expect(result.content.map((item) => item.type)).toEqual(["text", "image"])
+    const text = result.content[0]?.text ?? ""
+    expect(text).toContain("12 frames in a 4 x 3 grid")
+    expect(text).toContain("Row 1: 0:00.0 (0 ms), 0:05.0 (5000 ms)")
+  })
+
+  it("spreads a window of frames and honours the size", async () => {
     const frames = fakeFrames()
     const { handler } = setup({
       frames,
-      reader: makeReader({
-        reports: { rpt_1: video },
-        captures: { rpt_1: { durationMs: 100_000 } },
-      }),
+      reader: makeReader({ reports: { rpt_1: video } }),
     })
-    await callTool(handler, "get_video_frames", { report: "rpt_1" })
+    await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      window: { from: "0:10", to: 20_000, count: 3 },
+      size: 360,
+    })
 
-    expect(frames.requests).toEqual([[10_000, 35_000, 60_000, 85_000]])
+    expect(frames.requests).toEqual([[10_000, 15_000, 20_000]])
+    expect(frames.heights).toEqual([360])
+  })
+
+  it("takes bare numbers as milliseconds and refuses two modes at once", async () => {
+    const frames = fakeFrames()
+    const { handler } = setup({
+      frames,
+      reader: makeReader({ reports: { rpt_1: video } }),
+    })
+    await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      at: [45_000],
+    })
+    expect(frames.requests).toEqual([[45_000]])
+
+    const both = await callTool(handler, "get_video_frames", {
+      report: "rpt_1",
+      at: [1000],
+      overview: true,
+    })
+    expect(both.result.isError).toBe(true)
+    expect(both.text).toContain("one of `overview`, `at` or `window`")
   })
 
   it("returns the screenshot for screenshot reports", async () => {

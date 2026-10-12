@@ -255,6 +255,24 @@ export function makeReader(input: {
           durationMs: capture ? capture.durationMs : 60_000,
         }
       }),
+    getNetworkRequestBodies: (bodiesInput) =>
+      settle(() => {
+        calls.push(
+          `getNetworkRequestBodies:${bodiesInput.requestIds.join(",")}`
+        )
+        requireReport(bodiesInput.id)
+        return Object.fromEntries(
+          bodiesInput.requestIds
+            .filter((requestId) => input.bodies?.[requestId])
+            .map((requestId) => [
+              requestId,
+              input.bodies?.[requestId] ?? {
+                requestBody: null,
+                responseBody: null,
+              },
+            ])
+        )
+      }),
     getNetworkRequestDetails: (detailsInput) =>
       settle(() => {
         calls.push(`getNetworkRequestDetails:${detailsInput.requestId}`)

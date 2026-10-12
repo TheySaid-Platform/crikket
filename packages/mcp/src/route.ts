@@ -23,8 +23,8 @@ export function createCrikketMcpRequestHandler(input: {
   return createMcpRequestHandler({
     appOrigin: input.appOrigin,
     frames: createVideoFrameService({
-      loadCapture: async (captureKey) =>
-        new Uint8Array(await getStorageProvider().read(captureKey)),
+      downloadCapture: (captureKey, destinationPath) =>
+        getStorageProvider().readToFile(captureKey, destinationPath),
     }),
     limitUser: input.limitUser,
     authenticate: createMcpAuthenticator({

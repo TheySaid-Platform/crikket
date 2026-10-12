@@ -13,8 +13,12 @@ const RATE_LIMIT_CONFIG = {
   windowSeconds: 60,
   ipMax: 180,
   userMax: 120,
-  prefix: "crikket:rate-limit:rpc",
+  prefix: "crikket:rate-limit",
 } as const
+
+// MCP traffic gets its own counters, so an AI session paging through a
+// report never uses up the same user's dashboard budget, and the reverse.
+type RateLimitBucket = "rpc" | "mcp"
 const RATE_LIMIT_ERROR_LOG_INTERVAL_MS = 60_000
 
 type RateLimitHeaders = Record<string, string>
@@ -47,7 +51,7 @@ type RateLimitResult = {
   reset: number
 }
 
-let rateLimiters: RateLimiters | undefined
+const rateLimitersByBucket = new Map<RateLimitBucket, RateLimiters>()
 let lastRateLimitErrorLoggedAt = 0
 
 function getRateLimitWindow(windowSeconds: number): `${number} s` {
@@ -58,13 +62,14 @@ function hasUpstashConfig(): boolean {
   return Boolean(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN)
 }
 
-function getRateLimiters(): RateLimiters | null {
+function getRateLimiters(bucket: RateLimitBucket): RateLimiters | null {
   if (!hasUpstashConfig()) {
     return null
   }
 
-  if (rateLimiters) {
-    return rateLimiters
+  const existing = rateLimitersByBucket.get(bucket)
+  if (existing) {
+    return existing
   }
 
   const redis = new Redis({
@@ -74,20 +79,21 @@ function getRateLimiters(): RateLimiters | null {
 
   const rpcWindow = getRateLimitWindow(RATE_LIMIT_CONFIG.windowSeconds)
 
-  rateLimiters = {
+  const limiters = {
     ip: new Ratelimit({
       redis,
       limiter: Ratelimit.fixedWindow(RATE_LIMIT_CONFIG.ipMax, rpcWindow),
-      prefix: `${RATE_LIMIT_CONFIG.prefix}:ip`,
+      prefix: `${RATE_LIMIT_CONFIG.prefix}:${bucket}:ip`,
     }),
     user: new Ratelimit({
       redis,
       limiter: Ratelimit.fixedWindow(RATE_LIMIT_CONFIG.userMax, rpcWindow),
-      prefix: `${RATE_LIMIT_CONFIG.prefix}:user`,
+      prefix: `${RATE_LIMIT_CONFIG.prefix}:${bucket}:user`,
     }),
   }
+  rateLimitersByBucket.set(bucket, limiters)
 
-  return rateLimiters
+  return limiters
 }
 
 function normalizeIpCandidate(value: string): string | null {
@@ -275,7 +281,9 @@ export async function evaluateRpcRateLimit(
     return { allowed: true, headers: {} }
   }
 
-  const limiters = getRateLimiters()
+  const limiters = getRateLimiters(
+    pathname.startsWith(MCP_ENDPOINT_PATH) ? "mcp" : "rpc"
+  )
   if (!limiters) {
     return { allowed: true, headers: {} }
   }

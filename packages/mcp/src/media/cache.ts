@@ -103,6 +103,29 @@ export class MediaCache {
     return path
   }
 
+  /**
+   * Lets `write` fill a temp file, then renames it into place, so a failed
+   * download never leaves a file that looks complete.
+   */
+  async writeFileWith(
+    reportId: string,
+    name: string,
+    write: (temporaryPath: string) => Promise<void>
+  ): Promise<string> {
+    const dir = this.reportDir(reportId)
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, name)
+    const temporary = `${path}.${process.pid}.partial`
+    try {
+      await write(temporary)
+      await rename(temporary, path)
+    } catch (error) {
+      await rm(temporary, { force: true })
+      throw error
+    }
+    return path
+  }
+
   async readFrameIndex(reportId: string): Promise<Record<string, CachedFrame>> {
     const data = await this.readFile(reportId, FRAMES_INDEX)
     if (!data) {

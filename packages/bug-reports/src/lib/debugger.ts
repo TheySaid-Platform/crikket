@@ -6,7 +6,17 @@ import {
 } from "@crikket/db/schema/bug-report"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { retryOnUniqueViolation } from "@crikket/shared/lib/server/retry-on-unique-violation"
-import { and, asc, count, eq, ilike, or, type SQL, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  count,
+  eq,
+  ilike,
+  inArray,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm"
 import { nanoid } from "nanoid"
 import { z } from "zod"
 
@@ -245,11 +255,46 @@ export async function getBugReportNetworkRequestsPage({
     .select(networkRequestListColumns)
     .from(bugReportNetworkRequest)
     .where(buildNetworkRequestsWhere({ bugReportId, search, tabId }))
-    .orderBy(asc(bugReportNetworkRequest.timestamp))
+    // The id breaks ties between rows with the same timestamp, so pages
+    // never overlap or skip a row.
+    .orderBy(
+      asc(bugReportNetworkRequest.timestamp),
+      asc(bugReportNetworkRequest.id)
+    )
     .limit(limit)
     .offset(offset)
 
   return networkRequests.map(toNetworkRequestListItem)
+}
+
+export async function getBugReportNetworkRequestBodies(input: {
+  bugReportId: string
+  requestIds: string[]
+}): Promise<Map<string, BugReportNetworkRequestPayload>> {
+  if (input.requestIds.length === 0) {
+    return new Map()
+  }
+
+  const rows = await db
+    .select({
+      id: bugReportNetworkRequest.id,
+      requestBody: bugReportNetworkRequest.requestBody,
+      responseBody: bugReportNetworkRequest.responseBody,
+    })
+    .from(bugReportNetworkRequest)
+    .where(
+      and(
+        eq(bugReportNetworkRequest.bugReportId, input.bugReportId),
+        inArray(bugReportNetworkRequest.id, input.requestIds)
+      )
+    )
+
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { requestBody: row.requestBody, responseBody: row.responseBody },
+    ])
+  )
 }
 
 export async function getBugReportNetworkRequestDetails({
@@ -496,7 +541,7 @@ export async function getBugReportDebuggerEventsData(
       })
       .from(bugReportAction)
       .where(eq(bugReportAction.bugReportId, bugReportId))
-      .orderBy(asc(bugReportAction.timestamp)),
+      .orderBy(asc(bugReportAction.timestamp), asc(bugReportAction.id)),
     db
       .select({
         id: bugReportLog.id,
@@ -510,7 +555,7 @@ export async function getBugReportDebuggerEventsData(
       })
       .from(bugReportLog)
       .where(eq(bugReportLog.bugReportId, bugReportId))
-      .orderBy(asc(bugReportLog.timestamp)),
+      .orderBy(asc(bugReportLog.timestamp), asc(bugReportLog.id)),
   ])
 
   return {

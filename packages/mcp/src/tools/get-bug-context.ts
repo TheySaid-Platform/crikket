@@ -1,8 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 
 import { isFailedNetworkRequest, jsonResult } from "../format"
-import { fetchAllNetworkRequests } from "../network"
+import { describeMissingRequests, fetchAllNetworkRequests } from "../network"
+import type { DebuggerEvents } from "../reader"
 import { toLogItem, toNetworkItem, toReportSummary, toStepItem } from "../views"
+import { withBodies } from "./get-network-requests"
 import {
   READ_ONLY_ANNOTATIONS,
   reportInputSchema,
@@ -17,9 +19,21 @@ const INITIAL_CAPS = { steps: 60, logs: 40, requests: 30 }
 const MIN_CAP = 6
 const LOG_MESSAGE_MAX_CHARS = 600
 const SHORT_LOG_MESSAGE_MAX_CHARS = 200
+/** Capture keeps 2,000 characters of a message, stack included. */
+const FIRST_ERROR_MAX_CHARS = 4000
+/** Failed requests whose bodies are shown inline. */
+const INLINE_BODY_REQUESTS = 5
+const BODY_MAX_CHARS_STEPS = [1000, 300, 0]
 const INCOMPLETE_DEBUGGER_STATUSES = new Set(["pending", "processing"])
 
 type Caps = typeof INITIAL_CAPS
+type DebuggerLog = DebuggerEvents["logs"][number]
+
+interface Budget {
+  caps: Caps
+  logMessageMaxChars: number
+  bodyMaxChars: number
+}
 
 export function registerGetBugContextTool(
   server: McpServer,
@@ -30,7 +44,7 @@ export function registerGetBugContextTool(
     {
       title: "Get bug context",
       description:
-        "Start here. Get everything needed to debug one bug report in a single call: its details, the user's steps, console errors and warnings, and failed network requests. Long lists keep their first and last items; use the other tools to read the rest.",
+        "Start here. Get everything needed to debug one bug report in a single call: its details, the user's steps, the first error of each tab in full (with its stack), console errors and warnings, failed network requests (the first few with bodies), and moments worth seeing with get_video_frames. Times are offsetMs, ms from the start of the video. Long lists keep their first and last items; use the other tools to read the rest.",
       inputSchema: { report: reportInputSchema },
       annotations: READ_ONLY_ANNOTATIONS,
     },
@@ -49,9 +63,20 @@ export function registerGetBugContextTool(
         const problemLogs = events.logs.filter(
           (log) => log.level === "error" || log.level === "warn"
         )
-        const failedRequests = requests.filter(isFailedNetworkRequest)
+        const failedRequests = requests.items.filter(isFailedNetworkRequest)
+        const failedWithBodies = await withBodies(deps.reader, {
+          id,
+          mode: "errors",
+          page: failedRequests.slice(0, INLINE_BODY_REQUESTS),
+          maxChars: BODY_MAX_CHARS_STEPS[0],
+        })
+        const notStored = countNotStored(report.metadata, {
+          actions: events.actions.length,
+          logs: events.logs.length,
+          networkRequests: requests.expectedTotal,
+        })
 
-        const build = (caps: Caps, logMessageMaxChars: number) => ({
+        const build = ({ caps, logMessageMaxChars, bodyMaxChars }: Budget) => ({
           report: toReportSummary(report, deps.appOrigin),
           summary: {
             steps: steps.length,
@@ -60,9 +85,13 @@ export function registerGetBugContextTool(
               .length,
             consoleWarnings: problemLogs.filter((log) => log.level === "warn")
               .length,
-            networkRequests: requests.length,
+            networkRequests: requests.items.length,
             failedNetworkRequests: failedRequests.length,
+            ...(notStored ? { capturedButNotStored: notStored } : {}),
           },
+          firstErrorPerTab: firstErrorPerTab(events.logs).map((log) =>
+            toLogItem(log, { messageMaxChars: FIRST_ERROR_MAX_CHARS })
+          ),
           steps: keepEnds(steps, caps.steps),
           consoleErrorsAndWarnings: keepEnds(
             problemLogs.map((log) =>
@@ -74,7 +103,12 @@ export function registerGetBugContextTool(
             caps.logs
           ),
           failedNetworkRequests: keepEnds(
-            failedRequests.map(toNetworkItem),
+            [
+              ...failedWithBodies.map((request) =>
+                trimBodies(request, bodyMaxChars)
+              ),
+              ...failedRequests.slice(INLINE_BODY_REQUESTS).map(toNetworkItem),
+            ],
             caps.requests
           ),
           screen: describeScreenAccess({
@@ -89,6 +123,8 @@ export function registerGetBugContextTool(
             caps,
             debuggerStatus: report.debuggerIngestionStatus,
             failedRequests: failedRequests.length,
+            missingRequests: describeMissingRequests(requests),
+            notStored,
             problemLogs: problemLogs.length,
             steps: steps.length,
           }),
@@ -97,6 +133,74 @@ export function registerGetBugContextTool(
         return jsonResult(fitToBudget(build))
       })
   )
+}
+
+/** The first error of the whole report and of each tab, in time order. */
+export function firstErrorPerTab(logs: DebuggerLog[]): DebuggerLog[] {
+  const seenTabs = new Set<string>()
+  const firsts: DebuggerLog[] = []
+  for (const log of logs) {
+    const tab = String(log.tabId ?? "none")
+    if (log.level === "error" && !seenTabs.has(tab)) {
+      seenTabs.add(tab)
+      firsts.push(log)
+    }
+  }
+  return firsts
+}
+
+function trimBodies<
+  T extends { requestBody?: string | null; responseBody?: string | null },
+>(request: T, maxChars: number) {
+  const { requestBody, responseBody, ...rest } = request
+  if (
+    maxChars <= 0 ||
+    (requestBody === undefined && responseBody === undefined)
+  ) {
+    return rest
+  }
+  return {
+    ...rest,
+    requestBody: shorten(requestBody, maxChars),
+    responseBody: shorten(responseBody, maxChars),
+  }
+}
+
+function shorten(value: string | null | undefined, maxChars: number) {
+  if (typeof value !== "string" || value.length <= maxChars) {
+    return value ?? null
+  }
+  return `${value.slice(0, maxChars)}… [${value.length - maxChars} more characters]`
+}
+
+type ItemCounts = { actions: number; logs: number; networkRequests: number }
+
+/**
+ * Compares what the recorder says it captured (stored on the report at
+ * upload) with what was stored. Ingestion drops items over 2,000 per kind and
+ * items that fail validation, so missing items here mean the lists are
+ * partial.
+ */
+export function countNotStored(
+  metadata: unknown,
+  stored: ItemCounts
+): Partial<ItemCounts> | null {
+  const captured =
+    typeof metadata === "object" && metadata !== null
+      ? (metadata as { debuggerSummary?: Partial<ItemCounts> }).debuggerSummary
+      : undefined
+  if (!captured) {
+    return null
+  }
+
+  const missing: Partial<ItemCounts> = {}
+  for (const kind of ["actions", "logs", "networkRequests"] as const) {
+    const capturedCount = captured[kind]
+    if (typeof capturedCount === "number" && capturedCount > stored[kind]) {
+      missing[kind] = capturedCount - stored[kind]
+    }
+  }
+  return Object.keys(missing).length > 0 ? missing : null
 }
 
 const MAX_SUGGESTED_MOMENTS = 4
@@ -174,26 +278,33 @@ export function keepEnds<T>(items: T[], cap: number): T[] {
   return [...items.slice(0, head), ...items.slice(items.length - tail)]
 }
 
-function fitToBudget<T>(
-  build: (caps: Caps, logMessageMaxChars: number) => T
-): T {
-  const caps = { ...INITIAL_CAPS }
-  let logMessageMaxChars = LOG_MESSAGE_MAX_CHARS
+function fitToBudget<T>(build: (budget: Budget) => T): T {
+  const budget: Budget = {
+    caps: { ...INITIAL_CAPS },
+    logMessageMaxChars: LOG_MESSAGE_MAX_CHARS,
+    bodyMaxChars: BODY_MAX_CHARS_STEPS[0] ?? 0,
+  }
 
   for (;;) {
-    const result = build(caps, logMessageMaxChars)
+    const result = build(budget)
     if (JSON.stringify(result, null, 2).length <= BUG_CONTEXT_BUDGET_CHARS) {
       return result
     }
 
+    const { caps } = budget
     const largest = (Object.keys(caps) as (keyof Caps)[])
       .filter((key) => caps[key] > MIN_CAP)
       .sort((a, b) => caps[b] - caps[a])[0]
+    const nextBodyMax = BODY_MAX_CHARS_STEPS.find(
+      (step) => step < budget.bodyMaxChars
+    )
 
     if (largest) {
       caps[largest] = Math.max(MIN_CAP, Math.floor(caps[largest] / 2))
-    } else if (logMessageMaxChars > SHORT_LOG_MESSAGE_MAX_CHARS) {
-      logMessageMaxChars = SHORT_LOG_MESSAGE_MAX_CHARS
+    } else if (budget.logMessageMaxChars > SHORT_LOG_MESSAGE_MAX_CHARS) {
+      budget.logMessageMaxChars = SHORT_LOG_MESSAGE_MAX_CHARS
+    } else if (nextBodyMax !== undefined) {
+      budget.bodyMaxChars = nextBodyMax
     } else {
       return result
     }
@@ -204,10 +315,29 @@ function buildNotes(input: {
   caps: Caps
   debuggerStatus: string
   failedRequests: number
+  missingRequests: string | null
+  notStored: Partial<ItemCounts> | null
   problemLogs: number
   steps: number
 }): string[] {
   const notes: string[] = []
+
+  if (input.notStored) {
+    const parts = [
+      input.notStored.logs ? `${input.notStored.logs} console logs` : null,
+      input.notStored.networkRequests
+        ? `${input.notStored.networkRequests} network requests`
+        : null,
+      input.notStored.actions ? `${input.notStored.actions} steps` : null,
+    ].filter(Boolean)
+    notes.push(
+      `The recorder captured ${parts.join(", ")} that were not stored (over the 2,000 per kind limit or invalid). These lists are partial: a missing error is not proof there was none.`
+    )
+  }
+
+  if (input.missingRequests) {
+    notes.push(input.missingRequests)
+  }
 
   if (INCOMPLETE_DEBUGGER_STATUSES.has(input.debuggerStatus)) {
     notes.push(

@@ -25,12 +25,18 @@ organization.
 ## Connect Claude Code
 
 ```bash
-claude mcp add --transport http crikket https://api.example.com/api/mcp \
+claude mcp add --scope user --transport http crikket https://api.example.com/api/mcp \
   --header "Authorization: Bearer <your-access-key>"
 ```
 
 Use your Crikket server URL. The settings page shows the exact command with
-your URL filled in.
+your URL filled in. `--scope user` makes Crikket available in every project.
+The command contains your key, so your shell saves it in its history; clear
+that line afterwards if that matters to you.
+
+Access keys work with clients that let you set a header, such as Claude Code
+and Cursor. Claude.ai and Claude Desktop custom connectors need MCP OAuth
+sign-in instead, which Crikket does not support yet.
 
 ## Connect Cursor
 
@@ -56,19 +62,24 @@ same way.
 
 | Tool | What it returns |
 | --- | --- |
-| `get_bug_context` | Start here: details, steps, console errors and warnings, and failed requests in one call |
+| `get_bug_context` | Start here: details, steps, the first error of each tab with its stack, console errors and warnings, failed requests with bodies, and moments worth seeing |
 | `list_bug_reports` | Reports in your organization, filtered by text, status, priority or visibility |
 | `get_bug_report` | One report's details, device, open tabs and a link to the video or screenshot |
 | `get_reproduction_steps` | What the user did, in order |
 | `get_console_logs` | Console output, filtered by level, text or tab |
-| `get_network_requests` | Network requests, optionally only the failed ones |
+| `get_network_requests` | Network requests, filtered by status (`"4xx"`, `"500"`), method, host or content type, with bodies of failed requests |
 | `get_network_request_details` | One request's headers and bodies |
-| `get_video_frames` | Still images from the video at times or steps (`"1:05"`, `"step:7"`), so the AI can see the screen |
+| `get_video_frames` | Still images from the video: an overview grid of the whole recording, frames at times or steps (`"1:05"`, `45000` ms, `"step:7"`), or evenly spaced frames in a window |
 
 Every tool takes either a report id or its share link
-(`https://app.example.com/s/<id>`). `get_video_frames` returns up to 6
-images per call; the AI's own model looks at them. The recording's audio is
-not available to the AI. Typed text is never recorded, only its
+(`https://app.example.com/s/<id>`). Times in results are `offsetMs`,
+milliseconds from the start of the video, and `get_video_frames` accepts
+them as they are. It returns up to 12 images per call; the AI's own model
+looks at them. The recording's audio is not available to the AI.
+
+If the recorder captured more than Crikket stored (over 2,000 logs, steps or
+requests), `get_bug_context` says so, so the AI does not read a missing error
+as proof there was none. Typed text is never recorded, only its
 length, and sensitive headers such as cookies and authorization are removed
 when a report is captured.
 

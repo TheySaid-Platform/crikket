@@ -1,21 +1,20 @@
 import { spawn } from "node:child_process"
 import { accessSync, constants } from "node:fs"
-import { mkdir, readdir, readFile, rm } from "node:fs/promises"
+import { readFile, rm } from "node:fs/promises"
 import { delimiter, join } from "node:path"
 
-const PTS_TIME_PATTERN = /pts_time:(-?\d+(?:\.\d+)?)/g
-const FRAME_WIDTH = 1280
+const PTS_TIME_PATTERN = /pts_time:(-?\d+(?:\.\d+)?)/
 /** Keeps very tall long-screenshots inside image limits for vision models. */
 const MAX_IMAGE_HEIGHT = 7900
+const MAX_IMAGE_WIDTH = 1280
 const JPEG_QUALITY = "4"
-/** Decode a little past the last target, then stop reading the file. */
-const DECODE_TAIL_SECONDS = 1
 
 export class MediaToolUnavailableError extends Error {}
 export class MediaTimeoutError extends Error {}
 
 export interface FfmpegOptions {
   ffmpegPath: string
+  ffprobePath: string
   /** Runs ffmpeg at a lower CPU priority than the API, when `nice` exists. */
   nicePath: string | null
   timeoutMs: number
@@ -40,61 +39,32 @@ export function findExecutable(name: string): string | null {
 
 export function findFfmpegOptions(timeoutMs: number): FfmpegOptions | null {
   const ffmpegPath = findExecutable("ffmpeg")
-  if (!ffmpegPath) {
+  const ffprobePath = findExecutable("ffprobe")
+  if (!(ffmpegPath && ffprobePath)) {
     return null
   }
-  return { ffmpegPath, nicePath: findExecutable("nice"), timeoutMs }
-}
-
-/**
- * Picks the first frame at or after each target time. Recordings from the
- * browser have no seek index, so ffmpeg decodes from the start; one term pair
- * per target keeps it to a single pass. ffmpeg's expression parser rejects
- * this at about 100 targets, far above the few a tool call asks for.
- */
-export function buildFrameSelectExpression(offsetsMs: number[]): string {
-  return offsetsMs
-    .map((offsetMs) => {
-      const seconds = (offsetMs / 1000).toFixed(3)
-      return `gte(t,${seconds})*lt(prev_pts*TB,${seconds})`
-    })
-    .join("+")
-}
-
-/** Matches each target to the first extracted frame at or after it. */
-export function matchFramesToTargets(
-  targetsMs: number[],
-  frameTimesMs: number[]
-): Map<number, number | null> {
-  const sortedFrames = [...frameTimesMs].sort((a, b) => a - b)
-  const matches = new Map<number, number | null>()
-
-  for (const targetMs of targetsMs) {
-    // A frame's timestamp can sit a millisecond before the target after
-    // rounding, so allow a tiny tolerance.
-    const index = sortedFrames.findIndex((frameMs) => frameMs >= targetMs - 2)
-    matches.set(targetMs, index === -1 ? null : (sortedFrames[index] ?? null))
+  return {
+    ffmpegPath,
+    ffprobePath,
+    nicePath: findExecutable("nice"),
+    timeoutMs,
   }
-
-  return matches
 }
 
-async function runFfmpeg(
+function runProcess(
   options: FfmpegOptions,
+  executable: string,
   args: string[]
-): Promise<string> {
-  const command = options.nicePath
-    ? [options.nicePath, "-n", "10", options.ffmpegPath, ...args]
-    : [options.ffmpegPath, ...args]
-  const [executable, ...commandArgs] = command
-  if (!executable) {
-    throw new Error("No ffmpeg command")
-  }
+): Promise<{ stdout: string; stderr: string }> {
+  const [command, ...commandArgs] = options.nicePath
+    ? [options.nicePath, "-n", "10", executable, ...args]
+    : [executable, ...args]
 
-  return await new Promise<string>((resolve, reject) => {
-    const child = spawn(executable, commandArgs, {
-      stdio: ["ignore", "ignore", "pipe"],
+  return new Promise((resolve, reject) => {
+    const child = spawn(command ?? executable, commandArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
     })
+    let stdout = ""
     let stderr = ""
     let timedOut = false
     const timer = setTimeout(() => {
@@ -102,6 +72,10 @@ async function runFfmpeg(
       child.kill("SIGKILL")
     }, options.timeoutMs)
 
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk
+    })
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk
@@ -119,7 +93,7 @@ async function runFfmpeg(
           )
         )
       } else if (exitCode === 0) {
-        resolve(stderr)
+        resolve({ stdout, stderr })
       } else {
         reject(
           new Error(`ffmpeg exited with ${exitCode}: ${stderr.slice(-500)}`)
@@ -130,77 +104,127 @@ async function runFfmpeg(
 }
 
 /**
- * Extracts one JPEG per target, 1280 px wide. Returns each target's frame
- * time and image; a target past the end of the video has no frame.
+ * Browser recordings are WebM with no seek index, so jumping to a time means
+ * decoding from the start. Copying the video stream into Matroska (no
+ * re-encode) writes that index once; after it, each frame costs only a
+ * decode from the nearest keyframe.
  */
-export async function extractVideoFrames(input: {
+export async function remuxForSeeking(input: {
+  options: FfmpegOptions
+  sourcePath: string
+  outputPath: string
+}): Promise<void> {
+  await runProcess(input.options, input.options.ffmpegPath, [
+    "-hide_banner",
+    "-nostdin",
+    "-y",
+    "-i",
+    input.sourcePath,
+    "-map",
+    "0:v:0",
+    "-c",
+    "copy",
+    "-f",
+    "matroska",
+    input.outputPath,
+  ])
+}
+
+export async function probeDurationMs(input: {
+  options: FfmpegOptions
+  path: string
+}): Promise<number | null> {
+  const { stdout } = await runProcess(
+    input.options,
+    input.options.ffprobePath,
+    [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "csv=p=0",
+      input.path,
+    ]
+  )
+  const seconds = Number(stdout.trim())
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.round(seconds * 1000)
+    : null
+}
+
+/**
+ * Writes the first frame at or after `targetMs` as a JPEG `height` px tall
+ * (never upscaled). Returns the frame's time, or null when the target is past
+ * the last frame.
+ */
+export async function extractFrameAt(input: {
   options: FfmpegOptions
   videoPath: string
-  workDir: string
-  targetsMs: number[]
-}): Promise<Map<number, { frameMs: number; image: Uint8Array } | null>> {
-  const targetsMs = [...new Set(input.targetsMs)].sort((a, b) => a - b)
-  const lastTargetSeconds = (targetsMs.at(-1) ?? 0) / 1000
+  targetMs: number
+  height: number
+  outputPath: string
+}): Promise<number | null> {
+  await rm(input.outputPath, { force: true })
+  const { stderr } = await runProcess(input.options, input.options.ffmpegPath, [
+    "-hide_banner",
+    "-nostdin",
+    "-y",
+    "-threads",
+    "1",
+    "-ss",
+    (input.targetMs / 1000).toFixed(3),
+    // Keep the video's own timestamps so showinfo reports the real time.
+    "-copyts",
+    "-i",
+    input.videoPath,
+    "-an",
+    "-frames:v",
+    "1",
+    "-vf",
+    `scale=-2:'min(${input.height},ih)',showinfo`,
+    "-q:v",
+    JPEG_QUALITY,
+    input.outputPath,
+  ])
 
-  await rm(input.workDir, { recursive: true, force: true })
-  await mkdir(input.workDir, { recursive: true })
-
-  try {
-    const stderr = await runFfmpeg(input.options, [
-      "-hide_banner",
-      "-nostdin",
-      "-threads",
-      "1",
-      "-i",
-      input.videoPath,
-      "-an",
-      "-filter_threads",
-      "1",
-      "-vf",
-      `select='${buildFrameSelectExpression(targetsMs)}',scale='min(${FRAME_WIDTH},iw)':-2,showinfo`,
-      "-fps_mode",
-      "vfr",
-      "-to",
-      String(lastTargetSeconds + DECODE_TAIL_SECONDS),
-      "-q:v",
-      JPEG_QUALITY,
-      join(input.workDir, "%04d.jpg"),
-    ])
-
-    // showinfo prints one line per frame that reached the output, in order.
-    const frameTimesMs = [...stderr.matchAll(PTS_TIME_PATTERN)].map((match) =>
-      Math.round(Number(match[1]) * 1000)
-    )
-    const files = (await readdir(input.workDir))
-      .filter((name) => name.endsWith(".jpg"))
-      .sort()
-    const imagesByFrameMs = new Map<number, Uint8Array>()
-    for (const [index, name] of files.entries()) {
-      const frameMs = frameTimesMs[index]
-      if (frameMs !== undefined) {
-        imagesByFrameMs.set(
-          frameMs,
-          new Uint8Array(await readFile(join(input.workDir, name)))
-        )
-      }
-    }
-
-    const matches = matchFramesToTargets(targetsMs, [...imagesByFrameMs.keys()])
-    const result = new Map<
-      number,
-      { frameMs: number; image: Uint8Array } | null
-    >()
-    for (const [targetMs, frameMs] of matches) {
-      const image = frameMs === null ? undefined : imagesByFrameMs.get(frameMs)
-      result.set(
-        targetMs,
-        frameMs === null || !image ? null : { frameMs, image }
-      )
-    }
-    return result
-  } finally {
-    await rm(input.workDir, { recursive: true, force: true })
+  const match = PTS_TIME_PATTERN.exec(stderr)
+  if (!match) {
+    return null
   }
+  try {
+    await readFile(input.outputPath)
+  } catch {
+    return null
+  }
+  return Math.round(Number(match[1]) * 1000)
+}
+
+/** Tiles equally sized JPEGs, named 01.jpg, 02.jpg, …, into one grid. */
+export async function buildGrid(input: {
+  options: FfmpegOptions
+  framesDir: string
+  columns: number
+  rows: number
+  outputPath: string
+}): Promise<Uint8Array> {
+  await runProcess(input.options, input.options.ffmpegPath, [
+    "-hide_banner",
+    "-nostdin",
+    "-y",
+    "-framerate",
+    "1",
+    "-i",
+    join(input.framesDir, "%02d.jpg"),
+    "-vf",
+    `tile=${input.columns}x${input.rows}:padding=4:color=white`,
+    "-frames:v",
+    "1",
+    "-q:v",
+    JPEG_QUALITY,
+    input.outputPath,
+  ])
+  return new Uint8Array(await readFile(input.outputPath))
 }
 
 /** Converts a screenshot to a JPEG that fits vision-model limits. */
@@ -209,14 +233,14 @@ export async function convertScreenshot(input: {
   imagePath: string
   outputPath: string
 }): Promise<Uint8Array> {
-  await runFfmpeg(input.options, [
+  await runProcess(input.options, input.options.ffmpegPath, [
     "-hide_banner",
     "-nostdin",
     "-y",
     "-i",
     input.imagePath,
     "-vf",
-    `scale='min(${FRAME_WIDTH},iw)':'min(${MAX_IMAGE_HEIGHT},ih)':force_original_aspect_ratio=decrease`,
+    `scale='min(${MAX_IMAGE_WIDTH},iw)':'min(${MAX_IMAGE_HEIGHT},ih)':force_original_aspect_ratio=decrease`,
     "-frames:v",
     "1",
     "-q:v",

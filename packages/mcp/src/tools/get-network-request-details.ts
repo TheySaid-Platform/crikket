@@ -12,7 +12,8 @@ import {
 } from "./shared"
 
 const HEADERS_MAX_CHARS = 8000
-const BODY_MAX_CHARS = 20_000
+/** Ingestion stores at most 8,000 characters of a body (capture keeps 4,000). */
+const BODY_MAX_CHARS = 8000
 
 export function registerGetNetworkRequestDetailsTool(
   server: McpServer,

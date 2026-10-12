@@ -2,6 +2,7 @@ import { getBugReportById } from "@crikket/bug-reports/procedures/get-bug-report
 import { getBugReportCaptureSource } from "@crikket/bug-reports/procedures/get-bug-report-capture"
 import {
   getBugReportDebuggerEvents,
+  getBugReportNetworkRequestBodies,
   getBugReportNetworkRequestDetails,
   getBugReportNetworkRequests,
 } from "@crikket/bug-reports/procedures/get-bug-report-debugger"
@@ -17,6 +18,7 @@ const readProcedures = {
   getNetworkRequestsPage: getBugReportNetworkRequests,
   getNetworkRequestDetails: getBugReportNetworkRequestDetails,
   getCaptureSource: getBugReportCaptureSource,
+  getNetworkRequestBodies: getBugReportNetworkRequestBodies,
 }
 
 type ReadInputs = InferRouterInputs<typeof readProcedures>
@@ -41,6 +43,8 @@ export function createProcedureReader(session: SessionContext) {
       call(readProcedures.getNetworkRequestDetails, input, options),
     getCaptureSource: (id: string) =>
       call(readProcedures.getCaptureSource, { id }, options),
+    getNetworkRequestBodies: (input: ReadInputs["getNetworkRequestBodies"]) =>
+      call(readProcedures.getNetworkRequestBodies, input, options),
   }
 }
 

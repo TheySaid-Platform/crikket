@@ -9,7 +9,7 @@ export function buildMcpEndpointUrl(serverUrl: string): string {
 }
 
 export function buildClaudeCodeCommand(endpointUrl: string, key: string) {
-  return `claude mcp add --transport http ${MCP_SERVER_NAME} ${endpointUrl} --header "Authorization: Bearer ${key}"`
+  return `claude mcp add --scope user --transport http ${MCP_SERVER_NAME} ${endpointUrl} --header "Authorization: Bearer ${key}"`
 }
 
 export function buildCursorConfig(endpointUrl: string, key: string) {
@@ -32,3 +32,6 @@ export function buildCursorConfig(endpointUrl: string, key: string) {
 export function formatKeyDate(value: string | null, fallback: string): string {
   return value ? new Date(value).toLocaleDateString() : fallback
 }
+
+export const SHELL_HISTORY_WARNING =
+  "This command contains your key, so your shell saves it in its history. Clear that line from the history afterwards, or use the Cursor JSON in a file instead."

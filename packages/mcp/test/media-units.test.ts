@@ -1,16 +1,21 @@
 import { describe, expect, it } from "bun:test"
 
-import {
-  buildFrameSelectExpression,
-  matchFramesToTargets,
-} from "../src/media/ffmpeg"
 import { createGate, MediaBusyError } from "../src/media/gate"
 import {
   describeTarget,
   resolveFrameTarget,
   STEP_FRAME_DELAY_MS,
 } from "../src/media/targets"
-import { describeScreenAccess } from "../src/tools/get-bug-context"
+import {
+  buildNetworkRequestFilter,
+  parseStatusFilter,
+} from "../src/network-filters"
+import {
+  countNotStored,
+  describeScreenAccess,
+  firstErrorPerTab,
+} from "../src/tools/get-bug-context"
+import { makeEvents, makeRequests } from "./fixtures"
 
 const STEPS = [0, 4000, null, 12_500]
 
@@ -20,14 +25,17 @@ function offsetOf(value: string | number): number | null {
 }
 
 describe("resolveFrameTarget", () => {
-  it("reads clock times, seconds and milliseconds", () => {
+  it("reads clock times and seconds, and bare numbers as milliseconds", () => {
     expect(offsetOf("1:05")).toBe(65_000)
     expect(offsetOf("1:05.3")).toBe(65_300)
     expect(offsetOf("1:02:03")).toBe(3_723_000)
     expect(offsetOf("45s")).toBe(45_000)
-    expect(offsetOf("12.5")).toBe(12_500)
-    expect(offsetOf(12.5)).toBe(12_500)
+    expect(offsetOf("12.5s")).toBe(12_500)
     expect(offsetOf("1500ms")).toBe(1500)
+    // Bare numbers are milliseconds, like offsetMs in every tool result.
+    expect(offsetOf(45_000)).toBe(45_000)
+    expect(offsetOf("45000")).toBe(45_000)
+    expect(offsetOf(0)).toBe(0)
   })
 
   it("takes a step's frame just after the step", () => {
@@ -68,22 +76,104 @@ describe("resolveFrameTarget", () => {
   })
 })
 
-describe("ffmpeg helpers", () => {
-  it("builds one select term pair per target", () => {
-    expect(buildFrameSelectExpression([1000, 45_500])).toBe(
-      "gte(t,1.000)*lt(prev_pts*TB,1.000)+gte(t,45.500)*lt(prev_pts*TB,45.500)"
-    )
+describe("network filters", () => {
+  const requests = makeRequests({ total: 6, failEvery: 2 }).map(
+    (request, index) => ({
+      ...request,
+      status: [500, 200, 404, 200, 0, 302][index] ?? 200,
+      url:
+        [
+          "https://api.example.com/a",
+          "https://example.com/b",
+          "https://cdn.other.io/c",
+          "https://api.example.com/d",
+          "https://api.example.com/e",
+          "https://example.com/f",
+        ][index] ?? "",
+      responseHeaders: {
+        "Content-Type": index % 2 === 0 ? "application/json" : "text/html",
+      },
+    })
+  )
+  const ids = (filter: (request: (typeof requests)[number]) => boolean) =>
+    requests.filter(filter).map((request) => request.id)
+
+  it("parses status classes and codes, and rejects anything else", () => {
+    const status = parseStatusFilter(["5xx", "404"])
+    expect(status.ok).toBe(true)
+    if (status.ok) {
+      expect([500, 503, 404, 400, 200, null].map(status.matches)).toEqual([
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+      ])
+    }
+    expect(parseStatusFilter(["5xx", "fivehundred"])).toEqual({
+      ok: false,
+      invalid: ["fivehundred"],
+    })
   })
 
-  it("matches each target to the first frame at or after it", () => {
-    const matches = matchFramesToTargets(
-      [1000, 1010, 45_000, 99_000],
-      [1033, 45_030]
-    )
-    expect(matches.get(1000)).toBe(1033)
-    expect(matches.get(1010)).toBe(1033)
-    expect(matches.get(45_000)).toBe(45_030)
-    expect(matches.get(99_000)).toBe(null)
+  it("combines filters with AND and values with OR", () => {
+    const status = parseStatusFilter(["4xx", "5xx"])
+    if (!status.ok) {
+      throw new Error("bad status filter")
+    }
+    expect(ids(buildNetworkRequestFilter({}, status.matches))).toEqual([
+      "req_0",
+      "req_2",
+    ])
+    expect(
+      ids(buildNetworkRequestFilter({ hosts: ["example.com"] }, null))
+    ).toEqual(["req_0", "req_1", "req_3", "req_4", "req_5"])
+    expect(
+      ids(
+        buildNetworkRequestFilter(
+          { hosts: ["api.example.com"], methods: ["post"] },
+          null
+        )
+      )
+    ).toEqual(["req_0", "req_4"])
+    expect(
+      ids(
+        buildNetworkRequestFilter(
+          { contentTypes: ["json"], failedOnly: true },
+          null
+        )
+      )
+    ).toEqual(["req_0", "req_2", "req_4"])
+  })
+})
+
+describe("bug context helpers", () => {
+  it("picks the first error of each tab", () => {
+    const { logs } = makeEvents({ errors: 4, warnings: 1 })
+    const tabbed = logs.map((log, index) => ({
+      ...log,
+      tabId: [11, 11, 12, 12, 13][index] ?? 11,
+    }))
+    expect(firstErrorPerTab(tabbed).map((log) => log.id)).toEqual([
+      "log_0",
+      "log_2",
+    ])
+  })
+
+  it("reports items the recorder captured but ingestion did not store", () => {
+    const metadata = {
+      debuggerSummary: { actions: 10, logs: 2500, networkRequests: 40 },
+    }
+    expect(
+      countNotStored(metadata, { actions: 10, logs: 2000, networkRequests: 38 })
+    ).toEqual({ logs: 500, networkRequests: 2 })
+    expect(
+      countNotStored(metadata, { actions: 10, logs: 2500, networkRequests: 40 })
+    ).toBe(null)
+    expect(
+      countNotStored({}, { actions: 0, logs: 0, networkRequests: 0 })
+    ).toBe(null)
   })
 })
 

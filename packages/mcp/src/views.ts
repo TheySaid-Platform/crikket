@@ -69,6 +69,7 @@ export function toStepItem(action: DebuggerAction, index: number) {
     step: index + 1,
     type: action.type,
     target: truncateText(action.target, TARGET_MAX_CHARS),
+    offsetMs: action.offset,
     time: formatOffset(action.offset),
     pageUrl: truncateText(action.pageUrl, URL_MAX_CHARS),
     tabId: action.tabId,
@@ -86,6 +87,7 @@ export function toLogItem(
       log.message,
       options?.messageMaxChars ?? LOG_MESSAGE_MAX_CHARS
     ),
+    offsetMs: log.offset,
     time: formatOffset(log.offset),
     pageUrl: truncateText(log.pageUrl, URL_MAX_CHARS),
     tabId: log.tabId,
@@ -103,6 +105,7 @@ export function toNetworkItem(request: NetworkRequestItem) {
     status: request.status,
     failure: request.failure,
     durationMs: request.duration,
+    offsetMs: request.offset,
     time: formatOffset(request.offset),
     pageUrl: truncateText(request.pageUrl, URL_MAX_CHARS),
     tabId: request.tabId,
