@@ -14,9 +14,20 @@ import {
 import {
   getMicrophoneTrack,
   openTabCaptureStream,
+  openTabVideoStream,
   requestDisplayCaptureStream,
+  requestDisplayVideoStream,
   stopCaptureStream,
 } from "@/lib/display-media"
+import {
+  INSTANT_REPLAY_MESSAGE,
+  INSTANT_REPLAY_WINDOW_MS,
+} from "@/lib/instant-replay/protocol"
+import {
+  createVideoReplayBuffer,
+  type VideoClip,
+  type VideoReplayBuffer,
+} from "@/lib/instant-replay/video-buffer"
 import { createWebmRecorder } from "@/lib/media-recorder"
 import { createMicLevelMeter, type MicLevelMeter } from "@/lib/mic-level-meter"
 import { saveRecording } from "@/lib/recording-store"
@@ -206,6 +217,82 @@ function toggleMic(): OffscreenResponse {
   return { ok: true, micState: micTrack.enabled ? "on" : "off" }
 }
 
+// Instant replay's video, kept apart from a recording.
+let replayVideo: VideoReplayBuffer | null = null
+// A clip cut by "replay-video-save", waiting for its debugger session id.
+let savedClip: VideoClip | null = null
+
+function stopReplayVideo(): void {
+  replayVideo?.stop()
+  replayVideo = null
+  savedClip = null
+}
+
+// The tab closed, sharing was stopped, or encoding failed.
+function endReplayVideo(): void {
+  stopReplayVideo()
+  chrome.runtime
+    .sendMessage({ type: INSTANT_REPLAY_MESSAGE.videoEnded })
+    .catch((error: unknown) => {
+      reportNonFatalError("Failed to report the end of the replay video", error)
+    })
+}
+
+type ReplayVideoStartRequest = Extract<
+  OffscreenRequest,
+  { type: "replay-video-start" }
+>
+
+async function startReplayVideo(
+  request: ReplayVideoStartRequest
+): Promise<OffscreenResponse> {
+  stopReplayVideo()
+  const stream =
+    request.source === "tab"
+      ? await openTabVideoStream(request.streamId)
+      : await requestDisplayVideoStream()
+  const [track] = stream.getVideoTracks()
+  const buffer = createVideoReplayBuffer(
+    track,
+    INSTANT_REPLAY_WINDOW_MS,
+    (error) => {
+      reportNonFatalError("Instant replay video failed", error)
+      if (replayVideo === buffer) endReplayVideo()
+    }
+  )
+  replayVideo = buffer
+  track.onended = () => {
+    if (replayVideo === buffer) endReplayVideo()
+  }
+  return { ok: true, startedAt: Date.now() }
+}
+
+async function saveReplayVideo(): Promise<OffscreenResponse> {
+  savedClip = (await replayVideo?.save()) ?? null
+  if (!savedClip) {
+    return { ok: false, error: "There is no video to save yet." }
+  }
+  return { ok: true, startedAt: savedClip.startedAt, at: savedClip.stoppedAt }
+}
+
+async function storeReplayVideo(
+  debuggerSessionId: string
+): Promise<OffscreenResponse> {
+  const clip = savedClip
+  savedClip = null
+  if (!clip) {
+    return { ok: false, error: "The video clip is gone. Save it again." }
+  }
+  await saveRecording(debuggerSessionId, {
+    blob: clip.blob,
+    durationMs: clip.stoppedAt - clip.startedAt,
+    startedAt: clip.startedAt,
+    stoppedAt: clip.stoppedAt,
+    pauses: [],
+  })
+  return { ok: true }
+}
+
 async function handle(request: OffscreenRequest): Promise<OffscreenResponse> {
   switch (request.type) {
     case "start":
@@ -218,6 +305,15 @@ async function handle(request: OffscreenRequest): Promise<OffscreenResponse> {
       return resume()
     case "toggle-mic":
       return toggleMic()
+    case "replay-video-start":
+      return await startReplayVideo(request)
+    case "replay-video-stop":
+      stopReplayVideo()
+      return { ok: true }
+    case "replay-video-save":
+      return await saveReplayVideo()
+    case "replay-video-store":
+      return await storeReplayVideo(request.debuggerSessionId)
     default:
       return { ok: false, error: "Unknown recorder request." }
   }

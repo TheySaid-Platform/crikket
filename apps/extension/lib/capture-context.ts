@@ -1,4 +1,5 @@
 import { RECORDING_ERROR_STORAGE_KEY } from "@/lib/background-recording/protocol"
+import { INSTANT_REPLAY_ENABLED_STORAGE_KEY } from "@/lib/instant-replay/protocol"
 
 export type CaptureContext = { title?: string; url?: string }
 
@@ -87,6 +88,8 @@ const RECORDING_BADGES = {
   paused: { text: "II", color: "#d97706" },
   // A capture failed; stays until the popup has shown why.
   error: { text: "!", color: "#dc2626" },
+  // Nothing else to show, and every page is keeping its last minutes.
+  instantReplay: { text: "●", color: "#10b981" },
 } as const
 
 export const setRecordingBadge = async (
@@ -94,8 +97,16 @@ export const setRecordingBadge = async (
 ): Promise<void> => {
   const stored = status
     ? {}
-    : await chrome.storage.local.get(RECORDING_ERROR_STORAGE_KEY)
-  const shown = status ?? (stored[RECORDING_ERROR_STORAGE_KEY] ? "error" : null)
+    : await chrome.storage.local.get([
+        RECORDING_ERROR_STORAGE_KEY,
+        INSTANT_REPLAY_ENABLED_STORAGE_KEY,
+      ])
+  const shown =
+    status ??
+    (stored[RECORDING_ERROR_STORAGE_KEY] ? "error" : null) ??
+    (stored[INSTANT_REPLAY_ENABLED_STORAGE_KEY] === true
+      ? "instantReplay"
+      : null)
   if (!shown) {
     await chrome.action.setBadgeText({ text: "" })
     return

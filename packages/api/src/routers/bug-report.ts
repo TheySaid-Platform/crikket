@@ -2,7 +2,10 @@ import {
   deleteBugReport,
   deleteBugReportsBulk,
 } from "@crikket/bug-reports/procedures/delete-bug-reports"
-import { getBugReportById } from "@crikket/bug-reports/procedures/get-bug-report"
+import {
+  getBugReportById,
+  getBugReportReplay,
+} from "@crikket/bug-reports/procedures/get-bug-report"
 import {
   getBugReportDebuggerEvents,
   getBugReportNetworkRequestPayload,
@@ -33,6 +36,7 @@ export const bugReportRouter = {
   finalizeUpload: finalizeBugReportUploadProcedure,
   retryDebuggerIngestion: retryBugReportDebuggerIngestionProcedure,
   getById: getBugReportById,
+  getReplay: getBugReportReplay,
   getDebuggerEvents: getBugReportDebuggerEvents,
   getNetworkRequests: getBugReportNetworkRequests,
   getNetworkRequestPayload: getBugReportNetworkRequestPayload,

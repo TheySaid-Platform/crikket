@@ -157,3 +157,63 @@ describe("debugger session store", () => {
     expect(snapshot?.tabs[0]?.url).toContain("app.example.com")
   })
 })
+
+describe("recent events of a tab", () => {
+  let store: ReturnType<typeof createDebuggerSessionStore>
+
+  const logAgo = (agoMs: number, message: string) =>
+    logAt(Date.now() - agoMs, message)
+
+  async function messagesSince(
+    captureType: "video" | "screenshot",
+    lookbackMs: number
+  ): Promise<string[]> {
+    const { sessionId } = await store.startSession({
+      captureTabId: 1,
+      captureType,
+      instantReplayLookbackMs: lookbackMs,
+    })
+    return messagesOf(await store.getSessionSnapshot(sessionId))
+  }
+
+  beforeEach(() => {
+    installFakeChrome()
+    openTab(1, "https://shop.example.com/", "Shop")
+    store = createDebuggerSessionStore()
+  })
+
+  it("starts the next screenshot after the last one, but keeps the events for a replay", async () => {
+    store.setInstantReplayEnabled(true)
+    await store.appendPageEvents(1, [logAgo(5000, "before")])
+
+    const first = await store.startSession({
+      captureTabId: 1,
+      captureType: "screenshot",
+      instantReplayLookbackMs: 10_000,
+    })
+    expect(messagesOf(await store.getSessionSnapshot(first.sessionId))).toEqual(
+      ["before"]
+    )
+    await store.discardSession(first.sessionId)
+
+    await store.appendPageEvents(1, [logAgo(0, "after")])
+    expect(await messagesSince("screenshot", 10_000)).toEqual(["after"])
+    expect(await messagesSince("video", 60_000)).toEqual(["before", "after"])
+  })
+
+  it("keeps a minute while instant replay is off, and its window while it is on", async () => {
+    const twoMinutes = 2 * 60_000
+
+    store.setInstantReplayEnabled(false)
+    await store.appendPageEvents(1, [logAgo(twoMinutes, "old while off")])
+    expect(await messagesSince("video", 5 * 60_000)).toEqual([])
+
+    store.setInstantReplayEnabled(true)
+    await store.appendPageEvents(1, [logAgo(twoMinutes, "old while on")])
+    expect(await messagesSince("video", 5 * 60_000)).toEqual(["old while on"])
+
+    // Turning it off drops what is older than a minute at once.
+    store.setInstantReplayEnabled(false)
+    expect(await messagesSince("video", 5 * 60_000)).toEqual([])
+  })
+})

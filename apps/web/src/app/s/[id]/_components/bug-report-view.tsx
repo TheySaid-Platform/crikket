@@ -5,6 +5,7 @@ import {
   BUG_REPORT_SUBMISSION_STATUS_OPTIONS,
 } from "@crikket/shared/constants/bug-report"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
+import type { PlaybackHandle } from "@crikket/ui/components/replay-player"
 import { Button } from "@crikket/ui/components/ui/button"
 import {
   ResizableHandle,
@@ -133,11 +134,11 @@ function renderBugReportMissingState() {
 }
 
 function syncPlaybackToEntry(input: {
-  desktopVideo: HTMLVideoElement | null
+  desktopVideo: PlaybackHandle | null
   entry: DebuggerTimelineEntry
-  getVisibleVideoElement: () => HTMLVideoElement | null
+  getVisibleVideoElement: () => PlaybackHandle | null
   metadataDurationMs: number | null
-  mobileVideo: HTMLVideoElement | null
+  mobileVideo: PlaybackHandle | null
   setPlaybackOffsetMs: (value: number) => void
   showVideo: boolean
 }): void {
@@ -261,8 +262,8 @@ function renderBugReportLoadedView(input: {
   refetch: () => Promise<unknown>
   retryIngestionPending: boolean
   sidebarProps: React.ComponentProps<typeof BugReportSidebar>
-  desktopVideoRef: React.RefObject<HTMLVideoElement | null>
-  mobileVideoRef: React.RefObject<HTMLVideoElement | null>
+  desktopVideoRef: React.RefObject<PlaybackHandle | null>
+  mobileVideoRef: React.RefObject<PlaybackHandle | null>
 }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -459,8 +460,8 @@ export function BugReportView({ id }: BugReportViewProps) {
     return networkRequestsQuery.data?.pages.flatMap((page) => page.items) ?? []
   }, [networkRequestsQuery.data])
 
-  const desktopVideoRef = useRef<HTMLVideoElement | null>(null)
-  const mobileVideoRef = useRef<HTMLVideoElement | null>(null)
+  const desktopVideoRef = useRef<PlaybackHandle | null>(null)
+  const mobileVideoRef = useRef<PlaybackHandle | null>(null)
   const [playbackOffsetMs, setPlaybackOffsetMs] = useState(0)
   const [isMobileVideoHidden, setIsMobileVideoHidden] = useState(false)
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
@@ -477,8 +478,10 @@ export function BugReportView({ id }: BugReportViewProps) {
     },
   })
 
+  // A video or an instant replay: either one plays along the timeline.
   const showVideo =
-    data?.attachmentType === "video" && Boolean(data.attachmentUrl)
+    (data?.attachmentType === "video" || data?.attachmentType === "replay") &&
+    Boolean(data.attachmentUrl)
   const metadataDurationMs = getMetadataDurationMs(data?.metadata)
   const isReady =
     data?.submissionStatus === BUG_REPORT_SUBMISSION_STATUS_OPTIONS.ready
@@ -549,7 +552,7 @@ export function BugReportView({ id }: BugReportViewProps) {
   const highlightedLogEntryIds = showVideo ? playbackLogEntryIds : []
   const highlightedNetworkEntryIds = showVideo ? playbackNetworkEntryIds : []
 
-  const getVisibleVideoElement = useCallback((): HTMLVideoElement | null => {
+  const getVisibleVideoElement = useCallback((): PlaybackHandle | null => {
     const desktopVideo = desktopVideoRef.current
     if (desktopVideo?.offsetParent !== null) {
       return desktopVideo

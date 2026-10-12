@@ -40,7 +40,8 @@
     "shadcn": "catalog:",
     "sonner": "catalog:",
     "tailwind-merge": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "rrweb-player": "^2.1.6"
   },
   "devDependencies": {
     "@crikket/config": "workspace:*",

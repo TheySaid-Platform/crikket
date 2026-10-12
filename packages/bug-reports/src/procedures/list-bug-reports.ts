@@ -20,6 +20,7 @@ import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { isExpiringSignedUrl, resolveCaptureUrl } from "../lib/storage"
 import {
+  type AttachmentType,
   formatDurationMs,
   isAttachmentType,
   isStatus,
@@ -49,7 +50,7 @@ export interface BugReportListItem {
   duration: string
   thumbnail: string | undefined
   attachmentUrl: string | undefined
-  attachmentType: "video" | "screenshot" | undefined
+  attachmentType: AttachmentType | undefined
   uploader?: {
     name: string
     avatar: string | undefined

@@ -2,7 +2,7 @@ import { getOrganizationEntitlements } from "@crikket/billing/service/entitlemen
 import { ORPCError } from "@orpc/server"
 
 export interface CreateBugReportEntitlementInput {
-  attachmentType: "video" | "screenshot"
+  attachmentType: "video" | "screenshot" | "replay"
   metadata?: {
     durationMs?: number
   }
@@ -21,7 +21,8 @@ export async function assertCreateBugReportEntitlements(input: {
     })
   }
 
-  if (input.payload.attachmentType !== "video") {
+  // An instant replay is a recording too, with the same plan limits.
+  if (input.payload.attachmentType === "screenshot") {
     return
   }
 

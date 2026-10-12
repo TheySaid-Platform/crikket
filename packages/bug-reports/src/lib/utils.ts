@@ -14,7 +14,9 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { shouldExposeBugReportToViewer } from "./read-access-policy"
 
-const attachmentTypes = ["video", "screenshot"] as const
+// "replay" is an instant replay of the page: rrweb events, gzipped JSON.
+export const attachmentTypes = ["video", "screenshot", "replay"] as const
+export type AttachmentType = (typeof attachmentTypes)[number]
 export const visibilityValues = Object.values(
   BUG_REPORT_VISIBILITY_OPTIONS
 ) as [BugReportVisibility, ...BugReportVisibility[]]
@@ -175,12 +177,15 @@ export function normalizeDebuggerNetworkRequestPagination(input: {
   }
 }
 
-export function buildFallbackTitle(
-  attachmentType: "video" | "screenshot"
-): string {
+const FALLBACK_TITLE_LABELS: Record<AttachmentType, string> = {
+  video: "Video Bug Report",
+  screenshot: "Screenshot Bug Report",
+  replay: "Instant Replay Bug Report",
+}
+
+export function buildFallbackTitle(attachmentType: AttachmentType): string {
   const now = new Date()
-  const label =
-    attachmentType === "video" ? "Video Bug Report" : "Screenshot Bug Report"
+  const label = FALLBACK_TITLE_LABELS[attachmentType]
   const timestamp = now.toISOString().replace("T", " ").slice(0, 16)
   return `${label} - ${timestamp}`
 }

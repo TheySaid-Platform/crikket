@@ -2,6 +2,7 @@ import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { registerBackgroundRecordingListeners } from "@/lib/background-recording/background"
 import { registerDebuggerBackgroundListeners } from "@/lib/bug-report-debugger/engine/background"
 import { RECORDER_TAB_ID_STORAGE_KEY } from "@/lib/capture-context"
+import { registerInstantReplayListeners } from "@/lib/instant-replay/background"
 import {
   clearStaleRecordingState,
   handleRecorderHotkeyCommand,
@@ -10,6 +11,7 @@ import {
 export default defineBackground(() => {
   registerDebuggerBackgroundListeners()
   registerBackgroundRecordingListeners()
+  registerInstantReplayListeners()
 
   chrome.commands.onCommand.addListener((command) => {
     handleRecorderHotkeyCommand(command).catch(async (error: unknown) => {

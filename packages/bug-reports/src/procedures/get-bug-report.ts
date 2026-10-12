@@ -6,7 +6,8 @@ import {
 } from "@crikket/shared/constants/priorities"
 import { ORPCError } from "@orpc/server"
 import { eq } from "drizzle-orm"
-import { resolveCaptureUrl } from "../lib/storage"
+import { readReplayFile } from "../lib/replay"
+import { getStorageProvider, resolveCaptureUrl } from "../lib/storage"
 import {
   assertBugReportAccessById,
   assertVisibilityAccess,
@@ -90,4 +91,24 @@ export const getBugReportById = o
         logo: report.organization.logo,
       },
     }
+  })
+
+/**
+ * The rrweb events of an instant replay, as the stored gzipped JSON file.
+ * Read through the server, so the report page does not depend on the
+ * bucket's CORS rules.
+ */
+export const getBugReportReplay = o
+  .input(bugReportIdInputSchema)
+  .handler(async ({ context, input }) => {
+    await assertBugReportAccessById({
+      id: input.id,
+      session: context.session,
+    })
+
+    const report = await db.query.bugReport.findFirst({
+      where: eq(bugReport.id, input.id),
+      columns: { attachmentType: true, captureKey: true },
+    })
+    return readReplayFile(report ?? null, getStorageProvider())
   })

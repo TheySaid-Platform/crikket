@@ -1,6 +1,6 @@
 {
   "name": "extension",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "description": "manifest.json description",
   "type": "module",
@@ -31,7 +31,9 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "lucide-react": "catalog:",
-    "mediabunny": "^1.61.0"
+    "mediabunny": "^1.61.0",
+    "@rrweb/record": "^2.1.6",
+    "@rrweb/types": "^2.1.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "catalog:",

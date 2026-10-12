@@ -27,6 +27,8 @@ export interface StorageProvider {
     url: string
   }>
   exists(filename: string): Promise<boolean>
+  // Bytes stored, or null when there is no such object.
+  size(filename: string): Promise<number | null>
   read(filename: string): Promise<Buffer>
   remove(filename: string): Promise<void>
 }
@@ -169,6 +171,19 @@ export function createS3StorageProvider(
         return true
       } catch {
         return false
+      }
+    },
+    async size(filename: string): Promise<number | null> {
+      try {
+        const response = await client.send(
+          new HeadObjectCommand({
+            Bucket: options.bucket,
+            Key: filename,
+          })
+        )
+        return response.ContentLength ?? null
+      } catch {
+        return null
       }
     },
     async read(filename: string): Promise<Buffer> {

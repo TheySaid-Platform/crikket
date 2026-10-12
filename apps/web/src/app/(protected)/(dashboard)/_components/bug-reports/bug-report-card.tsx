@@ -27,6 +27,7 @@ import {
   Copy,
   Edit3,
   ExternalLink,
+  History,
   ImageIcon,
   MoreVertical,
   Play,
@@ -206,7 +207,8 @@ export function BugReportCard({
             <MediaTypeBadge attachmentType={report.attachmentType} />
           </div>
 
-          {report.attachmentType === "video" ? (
+          {report.attachmentType === "video" ||
+          report.attachmentType === "replay" ? (
             <div className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-white text-xs">
               <Clock className="h-3 w-3" />
               {report.duration}
@@ -317,6 +319,15 @@ function MediaTypeBadge({
       <Badge className="border-white/15 bg-black/75 text-white backdrop-blur-sm hover:bg-black/75">
         <ImageIcon className="size-3" />
         Screenshot
+      </Badge>
+    )
+  }
+
+  if (attachmentType === "replay") {
+    return (
+      <Badge className="border-white/15 bg-black/75 text-white backdrop-blur-sm hover:bg-black/75">
+        <History className="size-3" />
+        Replay
       </Badge>
     )
   }

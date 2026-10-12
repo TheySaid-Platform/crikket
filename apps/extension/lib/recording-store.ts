@@ -4,6 +4,7 @@ import type {
 } from "@crikket/capture-core/debugger/types"
 import type { CaptureContext } from "@/lib/capture-context"
 import type { FullPageEnding } from "@/lib/full-page-screenshot"
+import type { ReplayEvent } from "@/lib/instant-replay/protocol"
 import type { ScreenshotEdits } from "@/lib/screenshot-annotations"
 import type { VideoEdits } from "@/lib/video-edit"
 
@@ -107,6 +108,34 @@ export async function loadScreenshot(
     image: entry.image,
     fullPage: (entry.fullPage as FullPageDetails | null | undefined) ?? null,
   }
+}
+
+export interface StoredReplay {
+  events: ReplayEvent[]
+  // The first event, and when the replay was saved (its last event).
+  startedAt: number
+  stoppedAt: number
+}
+
+/** Instant replays share the store too: only the newest capture is kept. */
+export async function saveReplay(
+  sessionId: string,
+  replay: StoredReplay
+): Promise<void> {
+  await runTransaction("readwrite", (store) => {
+    store.clear()
+    return store.put({ replay }, sessionId)
+  })
+}
+
+export async function loadReplay(
+  sessionId: string
+): Promise<StoredReplay | null> {
+  const entry = await runTransaction<{ replay?: StoredReplay }>(
+    "readonly",
+    (store) => store.get(sessionId)
+  )
+  return entry?.replay ?? null
 }
 
 // Kept next to a capture under its session id plus one of these.
