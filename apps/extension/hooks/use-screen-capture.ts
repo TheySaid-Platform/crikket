@@ -5,13 +5,18 @@ import {
   type VideoSource,
 } from "@/lib/capture-context"
 import {
+  getMicrophoneTrack,
   requestDisplayCaptureStream,
   requestTabCaptureStream,
   stopCaptureStream,
 } from "@/lib/display-media"
+import { createWebmRecorder } from "@/lib/media-recorder"
+
+export type MicState = "unavailable" | "on" | "off"
 
 export interface UseScreenCaptureReturn {
   isRecording: boolean
+  micState: MicState
   recordedBlob: Blob | null
   screenshotBlob: Blob | null
   error: string | null
@@ -23,6 +28,7 @@ export interface UseScreenCaptureReturn {
   reset: () => void
   setRecordedBlob: (blob: Blob | null) => void
   setScreenshotBlob: (blob: Blob | null) => void
+  toggleMic: () => void
 }
 
 export function useScreenCapture(): UseScreenCaptureReturn {
@@ -30,12 +36,27 @@ export function useScreenCapture(): UseScreenCaptureReturn {
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [micState, setMicState] = useState<MicState>("unavailable")
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   // Kept after the first read so a cancelled window picker can be retried.
   const captureTabIdRef = useRef<number | null>(null)
+  const micTrackRef = useRef<MediaStreamTrack | null>(null)
+
+  // stopCaptureStream already releases the mic; this only forgets it.
+  const clearMic = useCallback(() => {
+    micTrackRef.current = null
+    setMicState("unavailable")
+  }, [])
+
+  const toggleMic = useCallback(() => {
+    const micTrack = micTrackRef.current
+    if (!micTrack) return
+    micTrack.enabled = !micTrack.enabled
+    setMicState(micTrack.enabled ? "on" : "off")
+  }, [])
 
   const startRecording = useCallback(
     async (source: VideoSource = "tab"): Promise<boolean> => {
@@ -64,21 +85,10 @@ export function useScreenCapture(): UseScreenCaptureReturn {
         }
 
         streamRef.current = stream
+        micTrackRef.current = getMicrophoneTrack(stream)
+        setMicState(micTrackRef.current ? "on" : "unavailable")
 
-        const preferredMimeTypes = [
-          "video/webm;codecs=vp9,opus",
-          "video/webm;codecs=vp8,opus",
-          "video/webm;codecs=opus",
-          "video/webm",
-        ]
-        const mimeType =
-          preferredMimeTypes.find((type) =>
-            MediaRecorder.isTypeSupported(type)
-          ) ?? ""
-        const mediaRecorder = new MediaRecorder(
-          stream,
-          mimeType ? { mimeType } : undefined
-        )
+        const mediaRecorder = createWebmRecorder(stream)
 
         mediaRecorderRef.current = mediaRecorder
         chunksRef.current = []
@@ -94,6 +104,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
           setRecordedBlob(blob)
           setIsRecording(false)
           stopCaptureStream(stream)
+          clearMic()
         }
         stream.getVideoTracks()[0].onended = () => {
           if (isRecorderActive(mediaRecorderRef.current)) {
@@ -110,7 +121,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
         return false
       }
     },
-    []
+    [clearMic]
   )
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
@@ -128,13 +139,14 @@ export function useScreenCapture(): UseScreenCaptureReturn {
         if (streamRef.current) {
           stopCaptureStream(streamRef.current)
         }
+        clearMic()
 
         resolve(blob)
       }
 
       mediaRecorderRef.current.stop()
     })
-  }, [])
+  }, [clearMic])
 
   const pauseRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === "recording") {
@@ -216,10 +228,12 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     if (streamRef.current) {
       stopCaptureStream(streamRef.current)
     }
-  }, [])
+    clearMic()
+  }, [clearMic])
 
   return {
     isRecording,
+    micState,
     recordedBlob,
     screenshotBlob,
     error,
@@ -231,6 +245,7 @@ export function useScreenCapture(): UseScreenCaptureReturn {
     reset,
     setRecordedBlob,
     setScreenshotBlob,
+    toggleMic,
   }
 }
 

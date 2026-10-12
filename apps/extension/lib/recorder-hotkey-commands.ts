@@ -1,5 +1,10 @@
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import {
+  finishBackgroundRecording,
+  readBackgroundRecording,
+  toggleBackgroundRecordingPause,
+} from "@/lib/background-recording/background"
+import {
   HOTKEY_START_SCREENSHOT_CAPTURE_STORAGE_KEY,
   HOTKEY_START_VIDEO_CAPTURE_STORAGE_KEY,
   RECORDER_TAB_ID_STORAGE_KEY,
@@ -25,6 +30,11 @@ export async function handleStartScreenshotFromHotkey(): Promise<void> {
 }
 
 async function queueCaptureStartFromHotkey(storageKey: string): Promise<void> {
+  // A background tab recording is controlled from its floating bar.
+  if (await readBackgroundRecording()) {
+    return
+  }
+
   const state = await readRecordingState()
   if (state.isRecordingInProgress) {
     const recorderTabId = await resolveRecorderTabId()
@@ -43,6 +53,13 @@ async function queueCaptureStartFromHotkey(storageKey: string): Promise<void> {
 }
 
 export async function handleStopRecordingFromHotkey(): Promise<void> {
+  // This runs in the background worker, which does not receive its own
+  // runtime messages, so stop a background tab recording directly.
+  if (await readBackgroundRecording()) {
+    await finishBackgroundRecording()
+    return
+  }
+
   try {
     await chrome.runtime.sendMessage({ type: "STOP_RECORDING_FROM_POPUP" })
   } catch (error: unknown) {
@@ -57,6 +74,12 @@ export async function handleStopRecordingFromHotkey(): Promise<void> {
 
 // Unlike stop, this leaves the user on the tab they are recording.
 export async function handleTogglePauseFromHotkey(): Promise<void> {
+  // As for stop, a background recording is handled here directly.
+  if (await readBackgroundRecording()) {
+    await toggleBackgroundRecordingPause()
+    return
+  }
+
   try {
     await chrome.runtime.sendMessage({ type: TOGGLE_RECORDING_PAUSE_MESSAGE })
   } catch (error: unknown) {

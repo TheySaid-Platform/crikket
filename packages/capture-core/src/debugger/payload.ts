@@ -45,11 +45,7 @@ export function buildDebuggerSubmissionPayload(
 
   for (const event of events) {
     const timestamp = new Date(event.timestamp).toISOString()
-    // The video skips paused time, so later events move back by it.
-    const offset = toOffset(
-      event.timestamp - getPausedTimeBefore(event.timestamp, pauses),
-      anchorTimestamp
-    )
+    const offset = getEventOffset(event.timestamp, anchorTimestamp, pauses)
     const tabContext = { tabId: event.tabId, pageUrl: event.pageUrl }
 
     if (event.kind === "action") {
@@ -93,6 +89,19 @@ export function buildDebuggerSubmissionPayload(
   }
 
   return payload
+}
+
+// Where an event falls in the video, or null if it came before the recording.
+// The video skips paused time, so later events move back by it.
+export function getEventOffset(
+  timestamp: number,
+  anchorTimestamp: number,
+  pauses: readonly RecordingPause[] = []
+): number | null {
+  return toOffset(
+    timestamp - getPausedTimeBefore(timestamp, pauses),
+    anchorTimestamp
+  )
 }
 
 function getPausedTimeBefore(

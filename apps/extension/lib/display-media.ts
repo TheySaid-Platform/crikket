@@ -24,6 +24,14 @@ interface ChromeDisplayMediaStreamOptions extends DisplayMediaStreamOptions {
 // mic and any captured system audio.
 const cleanupByStream = new WeakMap<MediaStream, () => void>()
 
+// The raw microphone behind a recording stream. Toggling its `enabled` flag
+// mutes or unmutes narration without touching the tab or screen audio.
+const micTrackByStream = new WeakMap<MediaStream, MediaStreamTrack>()
+
+export const getMicrophoneTrack = (
+  stream: MediaStream
+): MediaStreamTrack | null => micTrackByStream.get(stream) ?? null
+
 export const requestTabCaptureStream = async (
   tabId: number
 ): Promise<MediaStream> => {
@@ -31,6 +39,14 @@ export const requestTabCaptureStream = async (
     targetTabId: tabId,
   })
 
+  return openTabCaptureStream(streamId)
+}
+
+// The offscreen recorder cannot call chrome.tabCapture, so the background
+// worker creates the stream id.
+export const openTabCaptureStream = async (
+  streamId: string
+): Promise<MediaStream> => {
   const tabStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: {
@@ -85,6 +101,7 @@ export const stopCaptureStream = (stream: MediaStream): void => {
 
   cleanupByStream.get(stream)?.()
   cleanupByStream.delete(stream)
+  micTrackByStream.delete(stream)
 }
 
 const mixWithMicrophone = async (
@@ -103,6 +120,11 @@ const mixWithMicrophone = async (
   }
 
   const audioContext = new AudioContext()
+  if (!(await startAudioContext(audioContext))) {
+    audioContext.close().catch(() => undefined)
+    return recordWithoutMixing(sourceStream, micStream)
+  }
+
   const mixDestination = audioContext.createMediaStreamDestination()
 
   // Window and screen capture often come without audio.
@@ -132,6 +154,62 @@ const mixWithMicrophone = async (
     }
     audioContext.close().catch(() => undefined)
   })
+
+  const micTrack = micStream?.getAudioTracks()[0]
+  if (micTrack) {
+    micTrackByStream.set(stream, micTrack)
+  }
+
+  return stream
+}
+
+// Chrome keeps an AudioContext suspended until the page is clicked, unless it
+// already had mic permission, so the mix would record silence. resume() never
+// settles without permission to play, hence the timeout.
+const AUDIO_CONTEXT_START_TIMEOUT_MS = 500
+
+const isRunning = (audioContext: AudioContext): boolean =>
+  audioContext.state === "running"
+
+const startAudioContext = async (
+  audioContext: AudioContext
+): Promise<boolean> => {
+  if (isRunning(audioContext)) return true
+
+  await Promise.race([
+    audioContext.resume().catch(() => undefined),
+    new Promise((resolve) =>
+      setTimeout(resolve, AUDIO_CONTEXT_START_TIMEOUT_MS)
+    ),
+  ])
+  return isRunning(audioContext)
+}
+
+// MediaRecorder keeps one audio track, so without a running AudioContext
+// record the narration if there is one.
+const recordWithoutMixing = (
+  sourceStream: MediaStream,
+  micStream: MediaStream | null
+): MediaStream => {
+  const micTrack = micStream?.getAudioTracks()[0]
+  const audioTrack = micTrack ?? sourceStream.getAudioTracks()[0]
+  const stream = new MediaStream([
+    sourceStream.getVideoTracks()[0],
+    ...(audioTrack ? [audioTrack] : []),
+  ])
+
+  cleanupByStream.set(stream, () => {
+    for (const track of [
+      ...sourceStream.getTracks(),
+      ...(micStream?.getTracks() ?? []),
+    ]) {
+      track.stop()
+    }
+  })
+
+  if (micTrack) {
+    micTrackByStream.set(stream, micTrack)
+  }
 
   return stream
 }

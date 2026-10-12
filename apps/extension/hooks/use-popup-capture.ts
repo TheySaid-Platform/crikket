@@ -2,6 +2,11 @@ import { appendDebuggerSessionIdToUrl } from "@crikket/capture-core/debugger/rec
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { useState } from "react"
 import {
+  requestBackgroundRecording,
+  requestScreenshot,
+} from "@/lib/background-recording/client"
+import { isPickerUnavailableError } from "@/lib/background-recording/protocol"
+import {
   discardDebuggerSession,
   startDebuggerSession,
 } from "@/lib/bug-report-debugger/client"
@@ -16,10 +21,15 @@ import {
   RECORDING_STARTED_AT_STORAGE_KEY,
   VIDEO_SOURCE_QUERY_PARAM,
 } from "@/lib/capture-context"
+import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
+import { delay } from "@/lib/utils"
 
 // "video" records the current tab; "display" records the full screen, following
 // the user across tabs.
-export type PopupCaptureType = "video" | "display" | "screenshot"
+export type PopupCaptureType = "video" | "display" | "screenshot" | "fullpage"
+
+const isScreenshotType = (captureType: PopupCaptureType) =>
+  captureType === "screenshot" || captureType === "fullpage"
 
 const RECORDING_COUNTDOWN_SECONDS = 3
 const ACTIVE_TAB_ERROR_MESSAGE =
@@ -73,11 +83,12 @@ export function usePopupCapture(): UsePopupCaptureReturn {
         activeTab.id
       )
 
-      if (captureType === "screenshot") {
+      if (isScreenshotType(captureType)) {
         await startScreenshotCapture({
           activeTab,
           captureContext,
           debuggerSessionId,
+          fullPage: captureType === "fullpage",
         })
       } else if (captureType === "display") {
         await startDisplayCapture({
@@ -144,8 +155,8 @@ async function initializeDebuggerSession(
 ): Promise<string> {
   const session = await startDebuggerSession({
     captureTabId,
-    captureType: captureType === "screenshot" ? "screenshot" : "video",
-    instantReplayLookbackMs: captureType === "screenshot" ? 10_000 : undefined,
+    captureType: isScreenshotType(captureType) ? "screenshot" : "video",
+    instantReplayLookbackMs: isScreenshotType(captureType) ? 10_000 : undefined,
     // Only Record Full Screen follows the user; Record This Tab keeps to the
     // tab it records.
     followTabs: captureType === "display",
@@ -154,34 +165,26 @@ async function initializeDebuggerSession(
   return session.sessionId
 }
 
+// The background worker takes the screenshot, so a full-page capture keeps
+// going if the popup closes, and opens the review over the page.
 async function startScreenshotCapture(input: {
   activeTab: ActiveCaptureTab
   captureContext: CaptureContext
   debuggerSessionId: string
+  fullPage: boolean
 }): Promise<void> {
   if (input.activeTab.windowId === null) {
     throw new Error(ACTIVE_TAB_ERROR_MESSAGE)
   }
 
-  const base64data = await chrome.tabs.captureVisibleTab(
-    input.activeTab.windowId,
-    {
-      format: "png",
-    }
-  )
-
   await chrome.storage.local.set({
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
-    pendingScreenshot: base64data,
   })
-
-  const recorderUrl = appendDebuggerSessionIdToUrl(
-    chrome.runtime.getURL("/recorder.html?captureType=screenshot"),
-    input.debuggerSessionId
-  )
-
-  await chrome.tabs.create({
-    url: recorderUrl,
+  await requestScreenshot({
+    mode: input.fullPage ? "fullPage" : "visible",
+    tabId: input.activeTab.id,
+    windowId: input.activeTab.windowId,
+    debuggerSessionId: input.debuggerSessionId,
   })
 }
 
@@ -201,6 +204,21 @@ async function startVideoCapture(input: {
   await runCountdown(input.setRecordingCountdown)
 
   await chrome.storage.local.remove([RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY])
+
+  // Chrome only asks for the microphone on a visible page, so the first
+  // recording uses the recorder tab (see AllowMicrophoneStep).
+  if (!(await isMicrophonePermissionUndecided())) {
+    await chrome.storage.local.set({
+      [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
+      [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
+    })
+    await requestBackgroundRecording({
+      source: "tab",
+      tabId: input.activeTab.id,
+      debuggerSessionId: input.debuggerSessionId,
+    })
+    return
+  }
 
   await chrome.storage.local.set({
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
@@ -225,8 +243,35 @@ async function startVideoCapture(input: {
   }
 }
 
-// No countdown here: the user still has to share their screen from the
-// recorder tab, which then takes them back to this tab.
+// Returns false when Chrome would not show the screen picker from the
+// background; other errors are thrown.
+async function startBackgroundDisplayCapture(input: {
+  activeTab: ActiveCaptureTab
+  debuggerSessionId: string
+}): Promise<boolean> {
+  try {
+    await requestBackgroundRecording({
+      source: "display",
+      tabId: input.activeTab.id,
+      debuggerSessionId: input.debuggerSessionId,
+    })
+    return true
+  } catch (error) {
+    if (error instanceof Error && error.name === "NotAllowedError") {
+      throw new Error("Screen sharing was cancelled.")
+    }
+    if (!(error instanceof Error && isPickerUnavailableError(error.name))) {
+      throw error
+    }
+    reportNonFatalError(
+      "Chrome would not show the screen picker here, using the recorder tab",
+      error
+    )
+    return false
+  }
+}
+
+// No countdown here: picking a screen in Chrome's dialog is the pause.
 async function startDisplayCapture(input: {
   activeTab: ActiveCaptureTab
   captureContext: CaptureContext
@@ -234,6 +279,17 @@ async function startDisplayCapture(input: {
 }): Promise<void> {
   await chrome.storage.local.set({
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
+  })
+
+  // The first recording keeps the recorder tab (see ChooseDisplayStep).
+  if (
+    !(await isMicrophonePermissionUndecided()) &&
+    (await startBackgroundDisplayCapture(input))
+  ) {
+    return
+  }
+
+  await chrome.storage.local.set({
     [CAPTURE_TAB_ID_STORAGE_KEY]: input.activeTab.id,
   })
 
@@ -266,12 +322,6 @@ async function runCountdown(
   }
 
   setRecordingCountdown(null)
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 }
 
 async function handleCaptureFailure(input: {

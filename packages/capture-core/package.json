@@ -24,6 +24,10 @@
       "types": "./dist/debugger/payload.d.ts",
       "default": "./dist/debugger/payload.js"
     },
+    "./debugger/trim": {
+      "types": "./dist/debugger/trim.d.ts",
+      "default": "./dist/debugger/trim.js"
+    },
     "./debugger/recorder-session": {
       "types": "./dist/debugger/recorder-session.d.ts",
       "default": "./dist/debugger/recorder-session.js"

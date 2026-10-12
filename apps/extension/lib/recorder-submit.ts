@@ -93,7 +93,10 @@ export function isUnauthorizedSubmissionError(error: unknown): boolean {
   return error instanceof ORPCError && error.code === "UNAUTHORIZED"
 }
 
-export function getSubmissionErrorMessage(error: unknown): string {
+export function getSubmissionErrorMessage(
+  error: unknown,
+  captureType: "video" | "screenshot" = "video"
+): string {
   if (error instanceof ORPCError) {
     const validationMessages = getValidationIssueMessages(error.data)
     if (validationMessages.length > 0) {
@@ -105,7 +108,9 @@ export function getSubmissionErrorMessage(error: unknown): string {
     }
 
     if (error.code === "PAYLOAD_TOO_LARGE") {
-      return "This report is too large to submit in one request. Retry with a shorter recording."
+      return captureType === "video"
+        ? "This report is too large to submit in one request. Retry with a shorter recording."
+        : "This report is too large to submit in one request. Retry with a smaller screenshot, for example by cropping it."
     }
 
     return error.message || "Failed to submit bug report."
