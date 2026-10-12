@@ -1,5 +1,8 @@
 FROM oven/bun:1.3.5-alpine
 
+# The MCP server cuts still frames from recorded videos (get_video_frames).
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 ENV NODE_ENV=production

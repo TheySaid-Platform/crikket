@@ -4,6 +4,7 @@ import { ORPCError } from "@orpc/server"
 import {
   countBugReportNetworkRequests,
   getBugReportDebuggerEventsData,
+  getBugReportNetworkRequestDetails as getBugReportNetworkRequestDetailsData,
   getBugReportNetworkRequestPayload as getBugReportNetworkRequestPayloadData,
   getBugReportNetworkRequestsPage,
 } from "../lib/debugger"
@@ -80,4 +81,28 @@ export const getBugReportNetworkRequestPayload = o
     }
 
     return payload
+  })
+
+/**
+ * One request with its headers and bodies. Used by the MCP server, which
+ * needs a single request without paging through the whole list.
+ */
+export const getBugReportNetworkRequestDetails = o
+  .input(debuggerNetworkRequestPayloadInputSchema)
+  .handler(async ({ context, input }) => {
+    await assertBugReportAccessById({
+      id: input.id,
+      session: context.session,
+    })
+
+    const details = await getBugReportNetworkRequestDetailsData({
+      bugReportId: input.id,
+      requestId: input.requestId,
+    })
+
+    if (!details) {
+      throw new ORPCError("NOT_FOUND", { message: "Network request not found" })
+    }
+
+    return details
   })

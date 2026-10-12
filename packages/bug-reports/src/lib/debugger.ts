@@ -144,6 +144,9 @@ export interface BugReportNetworkRequestPayload {
   responseBody: string | null
 }
 
+export type BugReportNetworkRequestDetails = BugReportNetworkRequestListItem &
+  BugReportNetworkRequestPayload
+
 export interface BugReportNetworkRequestsPageInput {
   bugReportId: string
   limit: number
@@ -171,6 +174,51 @@ export async function clearBugReportDebuggerData(
   ])
 }
 
+const networkRequestListColumns = {
+  id: bugReportNetworkRequest.id,
+  method: bugReportNetworkRequest.method,
+  url: bugReportNetworkRequest.url,
+  status: bugReportNetworkRequest.status,
+  duration: bugReportNetworkRequest.duration,
+  requestHeaders: bugReportNetworkRequest.requestHeaders,
+  responseHeaders: bugReportNetworkRequest.responseHeaders,
+  timestamp: bugReportNetworkRequest.timestamp,
+  offset: bugReportNetworkRequest.offset,
+  tabId: bugReportNetworkRequest.tabId,
+  pageUrl: bugReportNetworkRequest.pageUrl,
+  failure: bugReportNetworkRequest.failure,
+}
+
+function toNetworkRequestListItem(request: {
+  id: string
+  method: string
+  url: string
+  status: number | null
+  duration: number | null
+  requestHeaders: unknown
+  responseHeaders: unknown
+  timestamp: Date
+  offset: number | null
+  tabId: number | null
+  pageUrl: string | null
+  failure: string | null
+}): BugReportNetworkRequestListItem {
+  return {
+    id: request.id,
+    method: request.method,
+    url: request.url,
+    status: request.status,
+    duration: request.duration,
+    requestHeaders: asStringRecord(request.requestHeaders),
+    responseHeaders: asStringRecord(request.responseHeaders),
+    timestamp: request.timestamp.toISOString(),
+    offset: request.offset,
+    tabId: request.tabId,
+    pageUrl: request.pageUrl,
+    failure: request.failure,
+  }
+}
+
 export async function countBugReportNetworkRequests(input: {
   bugReportId: string
   search?: string
@@ -194,42 +242,44 @@ export async function getBugReportNetworkRequestsPage({
   BugReportNetworkRequestListItem[]
 > {
   const networkRequests = await db
-    .select({
-      id: bugReportNetworkRequest.id,
-      method: bugReportNetworkRequest.method,
-      url: bugReportNetworkRequest.url,
-      status: bugReportNetworkRequest.status,
-      duration: bugReportNetworkRequest.duration,
-      requestHeaders: bugReportNetworkRequest.requestHeaders,
-      responseHeaders: bugReportNetworkRequest.responseHeaders,
-      timestamp: bugReportNetworkRequest.timestamp,
-      offset: bugReportNetworkRequest.offset,
-      tabId: bugReportNetworkRequest.tabId,
-      pageUrl: bugReportNetworkRequest.pageUrl,
-      failure: bugReportNetworkRequest.failure,
-    })
+    .select(networkRequestListColumns)
     .from(bugReportNetworkRequest)
     .where(buildNetworkRequestsWhere({ bugReportId, search, tabId }))
     .orderBy(asc(bugReportNetworkRequest.timestamp))
     .limit(limit)
     .offset(offset)
 
-  return networkRequests.map((request): BugReportNetworkRequestListItem => {
-    return {
-      id: request.id,
-      method: request.method,
-      url: request.url,
-      status: request.status,
-      duration: request.duration,
-      requestHeaders: asStringRecord(request.requestHeaders),
-      responseHeaders: asStringRecord(request.responseHeaders),
-      timestamp: request.timestamp.toISOString(),
-      offset: request.offset,
-      tabId: request.tabId,
-      pageUrl: request.pageUrl,
-      failure: request.failure,
-    }
-  })
+  return networkRequests.map(toNetworkRequestListItem)
+}
+
+export async function getBugReportNetworkRequestDetails({
+  bugReportId,
+  requestId,
+}: BugReportNetworkRequestPayloadInput): Promise<BugReportNetworkRequestDetails | null> {
+  const [request] = await db
+    .select({
+      ...networkRequestListColumns,
+      requestBody: bugReportNetworkRequest.requestBody,
+      responseBody: bugReportNetworkRequest.responseBody,
+    })
+    .from(bugReportNetworkRequest)
+    .where(
+      and(
+        eq(bugReportNetworkRequest.bugReportId, bugReportId),
+        eq(bugReportNetworkRequest.id, requestId)
+      )
+    )
+    .limit(1)
+
+  if (!request) {
+    return null
+  }
+
+  return {
+    ...toNetworkRequestListItem(request),
+    requestBody: request.requestBody,
+    responseBody: request.responseBody,
+  }
 }
 
 export async function getBugReportNetworkRequestPayload({

@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto"
 import { isIP } from "node:net"
 import { env } from "@crikket/env/server"
+import { MCP_ENDPOINT_PATH } from "@crikket/shared/constants/mcp"
 import { ORPCError } from "@orpc/client"
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 
 const RPC_ROUTE_PREFIX = "/rpc/"
+const RATE_LIMITED_PATH_PREFIXES = [RPC_ROUTE_PREFIX, MCP_ENDPOINT_PATH]
 const CLIENT_ID_FALLBACK = "anonymous"
 const RATE_LIMIT_CONFIG = {
   windowSeconds: 60,
@@ -267,7 +269,9 @@ export async function evaluateRpcRateLimit(
   }
 
   const pathname = new URL(request.url).pathname
-  if (!pathname.startsWith(RPC_ROUTE_PREFIX)) {
+  if (
+    !RATE_LIMITED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  ) {
     return { allowed: true, headers: {} }
   }
 
