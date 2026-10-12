@@ -1,3 +1,8 @@
+import {
+  MCP_ACCESS_KEY_EXPIRY_OPTIONS,
+  MCP_ACCESS_KEY_NAME_MAX_LENGTH,
+  type McpAccessKeyExpiry,
+} from "@crikket/shared/constants/mcp"
 import * as z from "zod"
 
 import { organizationFormSchema } from "@/lib/schema/organization"
@@ -67,4 +72,21 @@ export const captureKeyOriginsFormSchema = z.object({
 export const inviteMemberFormSchema = z.object({
   email: z.email("Enter a valid email address"),
   role: z.enum(["admin", "member"]),
+})
+
+const mcpAccessKeyExpiryValues = Object.keys(MCP_ACCESS_KEY_EXPIRY_OPTIONS) as [
+  McpAccessKeyExpiry,
+  ...McpAccessKeyExpiry[],
+]
+
+export const mcpAccessKeyCreateFormSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required")
+    .max(
+      MCP_ACCESS_KEY_NAME_MAX_LENGTH,
+      `Use ${MCP_ACCESS_KEY_NAME_MAX_LENGTH} characters or fewer`
+    ),
+  expiry: z.enum(mcpAccessKeyExpiryValues),
 })
