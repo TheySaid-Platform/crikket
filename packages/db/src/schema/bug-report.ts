@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core"
 import { organization, user } from "./auth"
 
@@ -211,6 +212,39 @@ export const bugReportIngestionJob = pgTable(
   ]
 )
 
+// One row per viewer per report. A row is the queued "your recording was
+// opened" email to the reporter; notifiedAt is set once it is sent.
+export const bugReportView = pgTable(
+  "bug_report_view",
+  {
+    id: text("id").primaryKey(),
+    bugReportId: text("bug_report_id")
+      .notNull()
+      .references(() => bugReport.id, { onDelete: "cascade" }),
+    // "user:<id>" for signed-in viewers, "anon" for everyone signed out.
+    viewerKey: text("viewer_key").notNull(),
+    viewerUserId: text("viewer_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    notifiedAt: timestamp("notified_at"),
+    notifyAttempts: integer("notify_attempts").default(0).notNull(),
+    nextNotifyAttemptAt: timestamp("next_notify_attempt_at")
+      .defaultNow()
+      .notNull(),
+    lastNotifyError: text("last_notify_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("bug_report_view_bugReportId_viewerKey_idx").on(
+      table.bugReportId,
+      table.viewerKey
+    ),
+    index("bug_report_view_nextNotifyAttemptAt_idx").on(
+      table.nextNotifyAttemptAt
+    ),
+  ]
+)
+
 export const capturePublicKey = pgTable(
   "capture_public_key",
   {
@@ -296,3 +330,14 @@ export const capturePublicKeyRelations = relations(
     }),
   })
 )
+
+export const bugReportViewRelations = relations(bugReportView, ({ one }) => ({
+  bugReport: one(bugReport, {
+    fields: [bugReportView.bugReportId],
+    references: [bugReport.id],
+  }),
+  viewer: one(user, {
+    fields: [bugReportView.viewerUserId],
+    references: [user.id],
+  }),
+}))

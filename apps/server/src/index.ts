@@ -8,6 +8,7 @@ import { auth } from "@crikket/auth"
 import { runBugReportIngestionPass } from "@crikket/bug-reports/lib/ingestion-jobs"
 import { runStalePendingBugReportCleanupPass } from "@crikket/bug-reports/lib/orphan-cleanup"
 import { runArtifactCleanupPass } from "@crikket/bug-reports/lib/storage"
+import { runBugReportViewNotificationPass } from "@crikket/bug-reports/lib/view-notifications"
 import { env } from "@crikket/env/server"
 import { OpenAPIHandler } from "@orpc/openapi/fetch"
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins"
@@ -29,6 +30,7 @@ const MAX_RPC_REQUEST_BODY_BYTES = 110 * 1024 * 1024
 const BUG_REPORT_INGESTION_INTERVAL_MS = 60 * 1000
 const BUG_REPORT_ORPHAN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 const STORAGE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+const BUG_REPORT_VIEW_NOTIFICATION_INTERVAL_MS = 60 * 1000
 type RateLimitHeaders = Record<string, string>
 
 function parseHeaderNumber(value: string | undefined): number | null {
@@ -173,6 +175,17 @@ const orphanCleanupInterval = setInterval(() => {
 }, BUG_REPORT_ORPHAN_CLEANUP_INTERVAL_MS)
 
 orphanCleanupInterval.unref?.()
+
+const viewNotificationInterval = setInterval(() => {
+  runBugReportViewNotificationPass({ limit: 20 }).catch((error: unknown) => {
+    console.error(
+      "[bug-report-view-notification] failed scheduled notification pass",
+      error
+    )
+  })
+}, BUG_REPORT_VIEW_NOTIFICATION_INTERVAL_MS)
+
+viewNotificationInterval.unref?.()
 
 export const apiHandler = new OpenAPIHandler(appRouter, {
   plugins: [

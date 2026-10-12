@@ -13,11 +13,13 @@ import type { ReactNode } from "react"
 type AuthEmailLayoutProps = {
   previewText: string
   children: ReactNode
+  footerText?: string
 }
 
 export function AuthEmailLayout({
   previewText,
   children,
+  footerText = "If you did not request this email, you can safely ignore it.",
 }: AuthEmailLayoutProps) {
   return (
     <Html>
@@ -26,9 +28,7 @@ export function AuthEmailLayout({
       <Body style={bodyStyle}>
         <Container style={containerStyle}>
           <Section style={cardStyle}>{children}</Section>
-          <Text style={footerStyle}>
-            If you did not request this email, you can safely ignore it.
-          </Text>
+          <Text style={footerStyle}>{footerText}</Text>
         </Container>
       </Body>
     </Html>
