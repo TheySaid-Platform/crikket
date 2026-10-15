@@ -123,20 +123,19 @@ if [ "${CHROME_AUTO_PUBLISH:-false}" != "true" ]; then
   exit 0
 fi
 
-PUBLISH_ARGS=(
-  publish
-  --extension-id "$CHROME_EXTENSION_ID"
-  --client-id "$CHROME_CLIENT_ID"
-  --client-secret "$CHROME_CLIENT_SECRET"
-  --refresh-token "$CHROME_REFRESH_TOKEN"
-)
 if [ "${CHROME_TRUSTED_TESTERS:-false}" = "true" ]; then
   echo "==> Submitting for review (trusted testers / private)"
-  PUBLISH_ARGS+=(--trusted-testers)
 else
   echo "==> Submitting for review (default / everyone)"
 fi
 
-bunx --bun chrome-webstore-upload-cli@3 "${PUBLISH_ARGS[@]}"
+# publish.ts instead of `chrome-webstore-upload-cli publish`: the CLI hides
+# Google's error body (CI showed only `error: [Object ...]`).
+CHROME_CLIENT_ID="$CHROME_CLIENT_ID" \
+CHROME_CLIENT_SECRET="$CHROME_CLIENT_SECRET" \
+CHROME_REFRESH_TOKEN="$CHROME_REFRESH_TOKEN" \
+CHROME_EXTENSION_ID="$CHROME_EXTENSION_ID" \
+CHROME_TRUSTED_TESTERS="${CHROME_TRUSTED_TESTERS:-false}" \
+bun run "$SCRIPT_DIR/publish.ts"
 
 echo "==> Submitted for review. It goes live automatically once Google approves."
