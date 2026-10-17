@@ -10,11 +10,13 @@ const PALETTE_TOOLS: { id: LiveDrawTool; label: string; icon: string }[] = [
   { id: "marker", label: "Marker", icon: ICONS.marker },
 ]
 
+// The editors' colors; black keeps drawings readable on light pages.
 const PALETTE_COLORS = [
   { value: "#ef4444", name: "Red" },
-  { value: "#facc15", name: "Yellow" },
+  { value: "#f59e0b", name: "Amber" },
   { value: "#22c55e", name: "Green" },
   { value: "#3b82f6", name: "Blue" },
+  { value: "#111827", name: "Black" },
   { value: "#ffffff", name: "White" },
 ]
 
@@ -23,22 +25,23 @@ export const DRAW_PALETTE_STYLES = `
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 5px;
-  border-radius: 16px;
-  background: rgba(17, 17, 21, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
   animation: pop-in 0.2s ease;
 }
 .palette[hidden] { display: none; }
-.palette .button { min-width: 32px; height: 32px; padding: 0 6px; border-radius: 10px; }
-.palette .button svg { width: 18px; height: 18px; }
+.palette .button { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 999px; }
+.palette .button svg { width: 16px; height: 16px; }
+.palette .button[aria-pressed="true"] { background: #fff; color: #0f172a; }
 .swatch {
   all: unset;
   position: relative;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   margin: 0 3px;
   border-radius: 50%;
   cursor: pointer;
@@ -46,8 +49,9 @@ export const DRAW_PALETTE_STYLES = `
   transition: transform 0.12s ease;
 }
 .swatch:hover { transform: scale(1.15); }
+.swatch.dark { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.75); }
 .swatch[aria-pressed="true"] {
-  box-shadow: 0 0 0 2px rgba(17, 17, 21, 0.95), 0 0 0 4px #fff;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.96), 0 0 0 3.5px #fff;
 }
 `
 
@@ -83,7 +87,7 @@ export function createDrawPalette(actions: DrawPaletteActions): DrawPalette {
   const swatches = PALETTE_COLORS.map(({ value, name }) => {
     const swatch = document.createElement("button")
     swatch.type = "button"
-    swatch.className = "swatch"
+    swatch.className = value === "#111827" ? "swatch dark" : "swatch"
     swatch.style.background = value
     setLabel(swatch, name)
     swatch.addEventListener("click", (event) => {

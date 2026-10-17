@@ -28,33 +28,23 @@ export function RecordingStep({
   togglePauseShortcut,
 }: RecordingStepProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-6 py-10">
-      <div className="relative w-full max-w-sm space-y-3 overflow-hidden rounded-2xl bg-zinc-950 p-6 text-center text-white shadow-lg">
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute -top-16 -right-12 h-40 w-40 rounded-full blur-3xl",
-            isPaused ? "bg-amber-500/25" : "bg-rose-500/25"
-          )}
-        />
-        <p className="relative flex items-center justify-center gap-2 font-medium text-sm text-white/70">
-          <span className="relative flex h-2.5 w-2.5">
-            {isPaused ? null : (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+    <div className="flex flex-col items-center justify-center gap-5 px-6 py-12">
+      <div className="w-full max-w-sm space-y-2 rounded-lg bg-slate-900 p-6 text-center text-white">
+        <p className="flex items-center justify-center gap-2 font-medium text-[13px] text-white/80">
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              isPaused
+                ? "bg-amber-400 ring-3 ring-amber-400/25"
+                : "bg-rose-500 ring-3 ring-rose-500/25"
             )}
-            <span
-              className={cn(
-                "relative inline-flex h-2.5 w-2.5 rounded-full",
-                isPaused ? "bg-amber-400" : "bg-rose-500"
-              )}
-            />
-          </span>
+          />
           {isPaused ? "Recording paused" : "Recording"}
         </p>
         <p
           className={cn(
-            "relative font-mono font-semibold text-5xl tabular-nums",
-            isPaused && "text-white/60"
+            "font-mono font-semibold text-5xl tabular-nums tracking-tight",
+            isPaused && "text-white/55"
           )}
         >
           {formatDuration(duration)}
@@ -63,23 +53,21 @@ export function RecordingStep({
 
       <div className="flex w-full max-w-sm flex-col gap-2">
         <Button
-          className="w-full justify-between bg-rose-500 text-white hover:bg-rose-600"
+          className="h-10 w-full justify-between bg-rose-600 text-white hover:bg-rose-700"
           onClick={onStopRecording}
-          size="lg"
         >
           <span className="flex items-center gap-2">
-            <Square className="h-4 w-4 fill-current" />
+            <Square className="h-3 w-3 fill-current" />
             Stop and review
           </span>
           <ShortcutKbd
-            className="bg-white/15 text-white"
+            className="h-[18px] min-w-0 rounded-[5px] bg-white/15 px-1 font-mono text-[10px] text-white"
             shortcut={stopRecordingShortcut}
           />
         </Button>
         <Button
-          className="w-full justify-between"
+          className="h-10 w-full justify-between"
           onClick={onTogglePause}
-          size="lg"
           variant="outline"
         >
           <span className="flex items-center gap-2">
@@ -91,12 +79,12 @@ export function RecordingStep({
             {isPaused ? "Resume" : "Pause"}
           </span>
           <ShortcutKbd
-            className="bg-muted text-foreground"
+            className="h-[18px] min-w-0 rounded-[5px] border bg-background px-1 font-mono text-[10px] text-muted-foreground"
             shortcut={togglePauseShortcut}
           />
         </Button>
         <MicToggleButton
-          className="w-full gap-2"
+          className="h-10 w-full gap-2"
           micState={micState}
           onToggle={onToggleMic}
         />

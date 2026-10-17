@@ -306,11 +306,11 @@ function App() {
 
     if (!hasPayloadData) {
       warnings.push(
-        "No debugger events were captured yet. Reproduce the issue once before submitting if you need network/action logs."
+        "No actions, logs or requests were captured. Reproduce the bug once before capturing if you need them."
       )
     } else if (summary.networkRequests === 0) {
       warnings.push(
-        `No network requests were captured with this ${CAPTURE_NOUNS[captureType]}. API-level debugging data may be incomplete.`
+        `No network requests were captured with this ${CAPTURE_NOUNS[captureType]}, so API details may be missing.`
       )
     }
 
@@ -700,11 +700,16 @@ function App() {
           onDiscard={handleReset}
         />
       }
-      wide={fullPageDetails !== null}
+      isOverPage={isReview}
+      size={getShellSize(state, fullPageDetails !== null)}
+      title={getShellTitle(state)}
     >
       {error ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-destructive">
-          <AlertCircle className="h-4 w-4" />
+        <div
+          className="mx-5 mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-red-800"
+          role="alert"
+        >
+          <AlertCircle className="mt-px h-4 w-4 shrink-0" />
           <span className="font-medium text-sm">{error}</span>
         </div>
       ) : null}
@@ -749,7 +754,12 @@ function App() {
       ) : null}
 
       {FORM_STATES.has(state) ? (
-        <div hidden={state === "editing"}>
+        // A display class would beat the hidden attribute, so no attribute.
+        <div
+          className={
+            state === "editing" ? "hidden" : "flex min-h-0 flex-1 flex-col"
+          }
+        >
           <FormStep
             captureLabel={CAPTURE_NOUNS[captureType]}
             debuggerSummary={debuggerSummary}
@@ -864,6 +874,21 @@ function getReportPageContext(
   return { url: firstPage.url, title: firstPage.title }
 }
 
+// Before anything is captured it is setup, not a report yet.
+function getShellTitle(state: State): string {
+  if (state === "idle") return "Crikket setup"
+  if (state === "recording") return "Recording"
+  return "New bug report"
+}
+
+function getShellSize(
+  state: State,
+  isLongScreenshot: boolean
+): "narrow" | "default" | "wide" {
+  if (state === "idle" || state === "recording") return "narrow"
+  return isLongScreenshot ? "wide" : "default"
+}
+
 // What the recorder tab shows before recording starts.
 type IdleMode = "choose-display" | "allow-microphone" | "waiting"
 
@@ -892,7 +917,7 @@ function IdleStep({
   }
 
   return (
-    <p className="text-center text-muted-foreground">
+    <p className="p-10 text-center text-muted-foreground text-sm">
       No active capture. Start from the extension popup.
     </p>
   )

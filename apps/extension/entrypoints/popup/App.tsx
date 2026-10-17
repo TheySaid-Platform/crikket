@@ -79,16 +79,16 @@ function App() {
   })
 
   return (
-    <div className="w-[360px] space-y-4 bg-linear-to-b from-slate-100 to-background p-3.5">
+    <div className="w-[360px] space-y-2.5 bg-muted/70 p-3">
       <PopupHeader />
 
       {error ? (
         <div
-          className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-destructive"
+          className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-red-800"
           role="alert"
         >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="text-sm">{error}</p>
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+          <p className="font-medium text-xs leading-relaxed">{error}</p>
         </div>
       ) : null}
 

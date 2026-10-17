@@ -3,6 +3,7 @@ import { cn } from "@crikket/ui/lib/utils"
 import {
   Camera,
   type LucideIcon,
+  MicOff,
   Monitor,
   Pause,
   Play,
@@ -54,7 +55,7 @@ interface CaptureOption {
   title: string
   description: string
   icon: LucideIcon
-  // Gradient of the icon chip, so each action is easy to spot.
+  // Tint of the icon chip, so each action is easy to spot.
   accent: string
 }
 
@@ -62,16 +63,16 @@ const RECORD_OPTIONS: CaptureOption[] = [
   {
     type: "video",
     title: "This tab",
-    description: "Video, console and network",
+    description: "Video, console, network",
     icon: Video,
-    accent: "from-rose-500 to-orange-400 shadow-rose-500/30",
+    accent: "bg-rose-50 text-rose-600",
   },
   {
     type: "display",
     title: "Full screen",
     description: "Follows you across tabs",
     icon: Monitor,
-    accent: "from-violet-500 to-indigo-500 shadow-violet-500/30",
+    accent: "bg-indigo-50 text-indigo-600",
   },
 ]
 
@@ -81,14 +82,14 @@ const CAPTURE_OPTIONS: CaptureOption[] = [
     title: "Screenshot",
     description: "What you see now",
     icon: Camera,
-    accent: "from-sky-500 to-blue-500 shadow-sky-500/30",
+    accent: "bg-blue-50 text-blue-600",
   },
   {
     type: "fullpage",
     title: "Long screenshot",
-    description: "From where you are, down the page",
+    description: "Scrolls down the page",
     icon: ScrollText,
-    accent: "from-emerald-500 to-teal-500 shadow-emerald-500/30",
+    accent: "bg-emerald-50 text-emerald-600",
   },
 ]
 
@@ -173,36 +174,42 @@ export function PopupCaptureActions({
       />
     ))
 
+  // The confirmation sits under the tiles it belongs to, so it stays next to
+  // the picked tile and inside the popup's 600px.
+  const renderPending = (options: CaptureOption[]) =>
+    pendingCaptureType &&
+    options.some((option) => option.type === pendingCaptureType) ? (
+      <PendingCapturePanel
+        captureType={pendingCaptureType}
+        hasUnsentReport={hasUnsentReport}
+        isBusy={isBusy}
+        onCancel={onClearPendingCapture}
+        onContinue={() => onStartCapture(pendingCaptureType)}
+      />
+    ) : null
+
   return (
-    <div className="space-y-4">
-      <section className="space-y-2">
+    <div className="space-y-2.5">
+      <section className="space-y-1.5">
         <SectionLabel>Record</SectionLabel>
         <div className="grid grid-cols-2 gap-2">
           {renderTiles(RECORD_OPTIONS)}
         </div>
       </section>
+      {renderPending(RECORD_OPTIONS)}
 
-      <section className="space-y-2">
+      <section className="space-y-1.5">
         <SectionLabel>Capture</SectionLabel>
         <div className="grid grid-cols-2 gap-2">
           {renderTiles(CAPTURE_OPTIONS)}
         </div>
       </section>
+      {renderPending(CAPTURE_OPTIONS)}
 
-      <section className="space-y-2">
+      <section className="space-y-1.5">
         <SectionLabel>Instant replay</SectionLabel>
         {instantReplayPanel}
       </section>
-
-      {pendingCaptureType ? (
-        <PendingCapturePanel
-          captureType={pendingCaptureType}
-          hasUnsentReport={hasUnsentReport}
-          isBusy={isBusy}
-          onCancel={onClearPendingCapture}
-          onContinue={() => onStartCapture(pendingCaptureType)}
-        />
-      ) : null}
     </div>
   )
 }
@@ -221,16 +228,16 @@ function PendingCapturePanel({
   onCancel: () => void
 }) {
   return (
-    <div className="space-y-3 rounded-2xl border border-blue-500/20 bg-blue-50/80 p-3.5">
+    <div className="space-y-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
       <p className="text-foreground/80 text-xs leading-relaxed">
         {PENDING_MESSAGES[captureType]}
       </p>
       {hasUnsentReport ? (
-        <p className="font-medium text-amber-900 text-xs leading-relaxed">
+        <p className="font-medium text-amber-800 text-xs leading-relaxed">
           Your unsent report will be deleted when this one starts.
         </p>
       ) : null}
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         <Button
           className={cn("flex-1", BRAND_BUTTON_CLASS)}
           disabled={isBusy}
@@ -239,7 +246,13 @@ function PendingCapturePanel({
         >
           {isBusy ? "Starting..." : "Continue"}
         </Button>
-        <Button disabled={isBusy} onClick={onCancel} size="sm" variant="ghost">
+        <Button
+          className="text-muted-foreground"
+          disabled={isBusy}
+          onClick={onCancel}
+          size="sm"
+          variant="ghost"
+        >
           Cancel
         </Button>
       </div>
@@ -263,23 +276,23 @@ function FullPageProgressPanel({
   return (
     <div
       aria-live="polite"
-      className="space-y-3 rounded-2xl border border-emerald-500/25 bg-emerald-50/80 p-3.5"
+      className="space-y-2.5 rounded-lg border bg-card p-3.5 shadow-xs"
     >
-      <div className="flex items-center justify-between font-medium text-sm">
+      <div className="flex items-center justify-between font-semibold text-[13px]">
         <span>Taking a long screenshot</span>
-        <span className="text-emerald-700 tabular-nums">{percent}%</span>
+        <span className="font-mono text-xs tabular-nums">{percent}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+          className="h-full rounded-full bg-primary transition-[width] duration-300"
           style={{ width: `${Math.max(4, percent)}%` }}
         />
       </div>
-      <p className="text-foreground/75 text-xs leading-relaxed">
+      <p className="text-muted-foreground text-xs leading-relaxed">
         {hasScreens
           ? `Screen ${progress.screensDone} of ${progress.screensTotal}. `
           : "Getting the page ready. "}
-        The page scrolls by itself. Stop when you have the part you need; you
+        The page scrolls by itself; stop when you have the part you need. You
         can cut it more in the review.
       </p>
       <Button
@@ -292,7 +305,7 @@ function FullPageProgressPanel({
         size="sm"
         variant="outline"
       >
-        <Square className="h-3.5 w-3.5 fill-current" />
+        <Square className="h-3 w-3 fill-current" />
         {isStopping ? "Stopping..." : "Stop here"}
       </Button>
     </div>
@@ -301,7 +314,7 @@ function FullPageProgressPanel({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="px-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
+    <p className="px-0.5 font-semibold text-[10.5px] text-muted-foreground uppercase tracking-[0.06em]">
       {children}
     </p>
   )
@@ -325,53 +338,46 @@ function CaptureTile({
     <button
       aria-pressed={isSelected}
       className={cn(
-        "group relative flex flex-col items-start gap-3 rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-xs transition-all duration-200",
-        "hover:-translate-y-0.5 hover:border-border hover:shadow-lg",
+        "flex min-h-[88px] min-w-0 flex-col rounded-lg border bg-card p-2.5 text-left shadow-xs transition-colors",
+        "hover:border-foreground/20",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-60",
-        isSelected && "border-blue-500/50 ring-2 ring-blue-500/25"
+        isSelected && "border-primary bg-primary/5 ring-1 ring-primary"
       )}
       disabled={disabled}
       onClick={onSelect}
       type="button"
     >
-      <span
-        className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br text-white shadow-md transition-transform duration-200 group-hover:scale-105",
-          option.accent
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="space-y-0.5">
-        <span className="block font-semibold text-sm">{option.title}</span>
-        <span className="block text-muted-foreground text-xs leading-snug">
-          {option.description}
+      <span className="flex w-full items-center justify-between">
+        <span
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-[9px]",
+            option.accent
+          )}
+        >
+          <Icon className="h-[17px] w-[17px]" />
         </span>
+        <ShortcutKbd className={SHORTCUT_CHIP_CLASS} shortcut={shortcut} />
       </span>
-      {shortcut ? (
-        <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium font-mono text-[10px] text-muted-foreground">
-          {shortcut}
-        </span>
-      ) : null}
+      <span className="mt-2 block font-semibold text-[13px]">
+        {option.title}
+      </span>
+      <span className="block truncate text-[11px] text-muted-foreground">
+        {option.description}
+      </span>
     </button>
   )
 }
 
 function CountdownPanel({ seconds }: { seconds: number }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card px-4 py-7 text-center shadow-xs">
-      <p className="font-medium text-muted-foreground text-sm">
-        Recording starts in
-      </p>
-      <span className="relative flex h-20 w-20 items-center justify-center">
-        <span className="absolute inset-0 animate-ping rounded-full bg-rose-500/25" />
-        <span
-          className="relative flex h-20 w-20 items-center justify-center rounded-full bg-linear-to-br from-rose-500 to-orange-400 font-bold text-4xl text-white shadow-lg shadow-rose-500/40"
-          key={seconds}
-        >
-          {seconds}
-        </span>
+    <div className="flex flex-col items-center gap-3 rounded-lg border bg-card px-4 py-6 text-center shadow-xs">
+      <p className="text-muted-foreground text-xs">Recording starts in</p>
+      <span
+        className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 font-mono font-semibold text-2xl text-white"
+        key={seconds}
+      >
+        {seconds}
       </span>
     </div>
   )
@@ -387,7 +393,13 @@ function getRecordingHint(isPaused: boolean, hasFloatingBar: boolean) {
 }
 
 const DARK_OUTLINE_BUTTON_CLASS =
-  "relative w-full border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+  "h-9 w-full border-white/12 bg-white/5 text-white shadow-none hover:bg-white/10 hover:text-white"
+
+// Shortcut keys on the tiles and buttons: small, quiet chips.
+const SHORTCUT_CHIP_CLASS =
+  "h-[18px] min-w-0 rounded-[5px] border bg-background px-1 font-mono text-[10px] text-muted-foreground"
+const SHORTCUT_ON_DARK_CLASS =
+  "h-[18px] min-w-0 rounded-[5px] bg-white/15 px-1 font-mono text-[10px] text-white"
 
 function RecordingPanel({
   durationMs,
@@ -413,53 +425,42 @@ function RecordingPanel({
   onTogglePause: () => Promise<void>
 }) {
   return (
-    <div className="relative space-y-3 overflow-hidden rounded-2xl bg-zinc-950 p-4 text-white shadow-lg">
-      <div
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute -top-16 -right-12 h-40 w-40 rounded-full blur-3xl",
-          isPaused ? "bg-amber-500/25" : "bg-rose-500/25"
-        )}
-      />
-      <div className="relative flex items-center justify-between">
-        <span className="flex items-center gap-2 font-medium text-sm text-white/80">
-          <span className="relative flex h-2.5 w-2.5">
-            {isPaused ? null : (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+    <div className="space-y-2.5 rounded-lg bg-slate-900 p-3.5 text-white">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 font-medium text-[13px] text-white/85">
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              isPaused
+                ? "bg-amber-400 ring-3 ring-amber-400/25"
+                : "bg-rose-500 ring-3 ring-rose-500/25"
             )}
-            <span
-              className={cn(
-                "relative inline-flex h-2.5 w-2.5 rounded-full",
-                isPaused ? "bg-amber-400" : "bg-rose-500"
-              )}
-            />
-          </span>
+          />
           {isPaused ? "Paused" : "Recording"}
         </span>
         <span
           className={cn(
-            "font-mono font-semibold text-2xl tabular-nums",
-            isPaused && "text-white/60"
+            "font-mono font-semibold text-[22px] tabular-nums tracking-tight",
+            isPaused && "text-white/55"
           )}
         >
           {formatDuration(durationMs)}
         </span>
       </div>
-      <p className="relative text-white/60 text-xs">
+      <p className="text-white/70 text-xs leading-relaxed">
         {getRecordingHint(isPaused, hasFloatingBar)}
       </p>
       <Button
-        className="relative w-full justify-between bg-rose-500 text-white hover:bg-rose-600"
+        className="h-9 w-full justify-between bg-rose-600 text-white hover:bg-rose-700"
         disabled={isBusy}
         onClick={() => onStop()}
-        size="lg"
       >
         <span className="flex items-center gap-2">
-          <Square className="h-4 w-4 fill-current" />
+          <Square className="h-3 w-3 fill-current" />
           Stop and review
         </span>
         <ShortcutKbd
-          className="bg-white/15 text-white"
+          className={SHORTCUT_ON_DARK_CLASS}
           shortcut={stopShortcut}
         />
       </Button>
@@ -478,15 +479,22 @@ function RecordingPanel({
           {isPaused ? "Resume" : "Pause"}
         </span>
         <ShortcutKbd
-          className="bg-white/15 text-white"
+          className={SHORTCUT_ON_DARK_CLASS}
           shortcut={togglePauseShortcut}
         />
       </Button>
-      <MicToggleButton
-        className={cn(DARK_OUTLINE_BUTTON_CLASS, "justify-start gap-2")}
-        micState={micState}
-        onToggle={onToggleMic}
-      />
+      {micState === "unavailable" ? (
+        <p className="flex items-center justify-center gap-1.5 text-[11.5px] text-white/65">
+          <MicOff className="h-3.5 w-3.5" />
+          No microphone. Tab sound only.
+        </p>
+      ) : (
+        <MicToggleButton
+          className={cn(DARK_OUTLINE_BUTTON_CLASS, "justify-start gap-2")}
+          micState={micState}
+          onToggle={onToggleMic}
+        />
+      )}
     </div>
   )
 }

@@ -73,7 +73,7 @@ export function VideoTimeline({
         aria-label={isPlaying ? "Pause" : "Play"}
         disabled={disabled}
         onClick={onTogglePlay}
-        size="icon"
+        size="icon-sm"
         type="button"
         variant="outline"
       >
@@ -89,7 +89,7 @@ export function VideoTimeline({
         aria-valuemax={Math.round(durationMs / 1000)}
         aria-valuemin={0}
         aria-valuenow={Math.round(currentMs / 1000)}
-        className="relative h-10 flex-1 cursor-pointer touch-none select-none overflow-hidden rounded-lg bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+        className="relative h-7 flex-1 cursor-pointer touch-none select-none rounded-md border bg-muted focus-visible:outline-2 focus-visible:outline-ring"
         onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         ref={trackRef}
@@ -97,11 +97,11 @@ export function VideoTimeline({
         tabIndex={0}
       >
         <div
-          className="absolute inset-y-0 left-0 bg-foreground/15"
+          className="absolute inset-y-0 left-0 rounded-l-md bg-foreground/10"
           style={{ width: `${toPercent(range.startMs)}%` }}
         />
         <div
-          className="absolute inset-y-0 right-0 bg-foreground/15"
+          className="absolute inset-y-0 right-0 rounded-r-md bg-foreground/10"
           style={{ width: `${100 - toPercent(range.endMs)}%` }}
         />
         {drawings.map((drawing, index) => (
@@ -111,7 +111,7 @@ export function VideoTimeline({
             style={{
               left: `${toPercent(drawing.startMs)}%`,
               width: `${Math.max(0.8, toPercent(drawing.endMs) - toPercent(drawing.startMs))}%`,
-              top: 8 + (index % DRAWING_LANES) * 9,
+              top: 4 + (index % DRAWING_LANES) * 7,
               backgroundColor:
                 drawing.annotation.kind === "blur"
                   ? "#64748b"
@@ -120,9 +120,11 @@ export function VideoTimeline({
           />
         ))}
         <div
-          className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground"
+          className="pointer-events-none absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded bg-foreground"
           style={{ left: `${toPercent(currentMs)}%` }}
-        />
+        >
+          <span className="absolute -top-2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rounded-full border border-border bg-background shadow" />
+        </div>
       </div>
 
       <span className="shrink-0 whitespace-nowrap text-right font-mono text-muted-foreground text-xs tabular-nums">

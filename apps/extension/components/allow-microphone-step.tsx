@@ -11,10 +11,10 @@ export function AllowMicrophoneStep({ onStart }: AllowMicrophoneStepProps) {
   return (
     <StartPrompt
       actionLabel="Start recording"
-      description="Chrome will ask to use your microphone so your voice is recorded along with the tab's sound. You only need to do this once."
+      description="Chrome will ask to use your microphone, so your voice is recorded with the tab's sound. You only do this once."
       icon={Mic}
       onStart={onStart}
-      title="One quick step first"
+      title="Allow the microphone once"
     />
   )
 }

@@ -10,7 +10,7 @@ export function ChooseDisplayStep({ onChoose }: ChooseDisplayStepProps) {
   return (
     <StartPrompt
       actionLabel="Share your screen"
-      description="Chrome will ask which screen to share. We'll take you back to your tab when recording starts, then move through as many tabs as you need."
+      description="Chrome will ask which screen or window to share. Crikket takes you back to your tab, then follows you across tabs."
       icon={Monitor}
       onStart={onChoose}
       title="Pick what to record"

@@ -29,6 +29,8 @@ const TOOL_DETAILS: Record<
   crop: { label: "Crop", icon: Crop, key: "C" },
 }
 
+const DARK_SWATCH = "#111827"
+
 export function getToolLabel(tool: AnnotationTool): string {
   return TOOL_DETAILS[tool].label
 }
@@ -65,11 +67,10 @@ export function AnnotationToolbar({
   children,
 }: AnnotationToolbarProps) {
   useAnnotationShortcuts({ tools, onToolChange, onUndo, onRedo })
-  const isCustomColor = !ANNOTATION_COLORS.includes(color)
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1 rounded-2xl bg-zinc-900 p-1.5 text-white shadow-lg ring-1 ring-white/10"
+      className="mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-0.5 rounded-full bg-gray-900 px-2 py-1.5 text-white shadow-lg"
       role="toolbar"
     >
       {tools.map((id) => {
@@ -88,15 +89,17 @@ export function AnnotationToolbar({
 
       <ToolbarDivider />
 
-      <div className="flex items-center gap-1.5 px-1.5">
+      <div className="flex items-center gap-2 px-1.5">
         {ANNOTATION_COLORS.map((swatch) => (
           <button
             aria-label={`Color ${swatch}`}
             aria-pressed={color === swatch}
             className={cn(
-              "h-[18px] w-[18px] rounded-full ring-1 ring-white/25 transition-transform hover:scale-110",
+              "h-4 w-4 rounded-full ring-1 transition-transform hover:scale-110",
+              // Black needs a light edge to show on the dark bar.
+              swatch === DARK_SWATCH ? "ring-white/70" : "ring-white/25",
               color === swatch &&
-                "ring-2 ring-white ring-offset-2 ring-offset-zinc-900"
+                "ring-2 ring-white ring-offset-2 ring-offset-gray-900"
             )}
             key={swatch}
             onClick={() => onColorChange(swatch)}
@@ -104,22 +107,6 @@ export function AnnotationToolbar({
             type="button"
           />
         ))}
-        <label
-          className={cn(
-            "relative h-[18px] w-[18px] cursor-pointer rounded-full bg-[conic-gradient(#ef4444,#facc15,#22c55e,#3b82f6,#a855f7,#ef4444)] ring-1 ring-white/25 transition-transform hover:scale-110",
-            isCustomColor &&
-              "ring-2 ring-white ring-offset-2 ring-offset-zinc-900"
-          )}
-          title="Pick any color"
-        >
-          <span className="sr-only">Pick any color</span>
-          <input
-            className="absolute inset-0 cursor-pointer opacity-0"
-            onChange={(event) => onColorChange(event.target.value)}
-            type="color"
-            value={isCustomColor ? color : "#ec4899"}
-          />
-        </label>
       </div>
 
       <ToolbarDivider />
@@ -163,18 +150,18 @@ function ToolbarButton({
       aria-label={label}
       aria-pressed={isActive}
       className={cn(
-        "group relative flex h-9 w-9 items-center justify-center rounded-xl text-white/75 transition-colors",
+        "group relative flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors",
         "hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-sky-400",
         "disabled:pointer-events-none disabled:opacity-35",
         isActive &&
-          "bg-white text-zinc-900 shadow-sm hover:bg-white hover:text-zinc-900"
+          "bg-white text-gray-900 shadow-sm hover:bg-white hover:text-gray-900"
       )}
       disabled={disabled}
       onClick={onClick}
       type="button"
     >
-      <Icon className="h-[18px] w-[18px]" />
-      <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-lg bg-zinc-900 px-2 py-1 font-medium text-[11px] text-white opacity-0 shadow-lg ring-1 ring-white/10 transition-opacity group-hover:opacity-100">
+      <Icon className="h-[17px] w-[17px]" />
+      <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 font-medium text-[11px] text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
         {label}
         <span className="text-white/50">{shortcut}</span>
       </span>
@@ -183,7 +170,7 @@ function ToolbarButton({
 }
 
 function ToolbarDivider() {
-  return <span className="mx-1 h-6 w-px bg-white/15" />
+  return <span className="mx-1.5 h-5 w-px bg-white/15" />
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

@@ -1,53 +1,72 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@crikket/ui/components/ui/card"
 import { cn } from "@crikket/ui/lib/utils"
 import type { ReactNode } from "react"
 
 interface ReviewShellProps {
+  // Shown in the header: "New bug report", "Crikket setup"...
+  title: string
   // The close (X) button, shown when the review opens over a page.
   closeButton: ReactNode
-  // For long screenshots, which show at their real size.
-  wide?: boolean
+  // Over a page the review fills its frame; in its own tab it is a card.
+  isOverPage: boolean
+  // Setup and recording steps are small; long screenshots show at their
+  // real size, so they get more room.
+  size?: "narrow" | "default" | "wide"
   children: ReactNode
 }
 
-/** The frame around the recorder and the review: backdrop, card and header. */
+const SIZE_CLASSES = {
+  narrow: "max-w-xl",
+  default: "max-w-5xl",
+  wide: "max-w-[1600px]",
+}
+
+/** The frame around the recorder and the review: header and content. */
 export function ReviewShell({
+  title,
   closeButton,
-  wide = false,
+  isOverPage,
+  size = "default",
   children,
 }: ReviewShellProps) {
+  const header = (
+    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b pr-4 pl-5">
+      <img
+        alt=""
+        className="h-6 w-6 rounded-[7px]"
+        height={24}
+        src="/icon/128.png"
+        width={24}
+      />
+      <h1 className="min-w-0 flex-1 truncate font-semibold text-[15px] tracking-tight">
+        {title}
+      </h1>
+      {closeButton}
+    </header>
+  )
+
+  // The page's frame already has the radius and shadow, so no card here.
+  if (isOverPage) {
+    return (
+      <div className="flex h-screen flex-col bg-background">
+        {header}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(60rem_30rem_at_0%_0%,rgba(37,99,235,0.14),transparent_70%),radial-gradient(50rem_30rem_at_100%_0%,rgba(124,58,237,0.12),transparent_70%)] bg-slate-100 p-4 sm:p-6">
-      <Card
+    <div className="flex min-h-screen items-center justify-center bg-muted/70 p-4 sm:p-6">
+      <div
         className={cn(
-          "relative w-full gap-0 overflow-visible rounded-3xl border-white/80 bg-white/90 py-0 shadow-2xl shadow-slate-900/10 backdrop-blur-xl",
-          wide ? "max-w-[1600px]" : "max-w-5xl"
+          "flex w-full flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
+          SIZE_CLASSES[size]
         )}
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-10 top-0 h-px bg-linear-to-r from-transparent via-blue-500/50 to-transparent"
-        />
-        <CardHeader className="flex flex-row items-center gap-3 border-border/60 border-b px-5 py-4">
-          {closeButton}
-          <img
-            alt=""
-            className="h-9 w-9 rounded-xl shadow-sm ring-1 ring-black/5"
-            height={36}
-            src="/icon/128.png"
-            width={36}
-          />
-          <CardTitle className="min-w-0 flex-1 truncate font-semibold text-base tracking-tight">
-            Crikket bug report
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6 p-5 sm:p-6">{children}</CardContent>
-      </Card>
+        {header}
+        <div className="flex flex-col">{children}</div>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,12 @@
 import { Button } from "@crikket/ui/components/ui/button"
-import { GripVertical, Pause, Play } from "lucide-react"
-import { type KeyboardEvent, type PointerEvent, useRef, useState } from "react"
+import { Pause, Play } from "lucide-react"
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react"
 import { BlurRegionBox } from "@/components/blur-region-box"
 import { VideoDrawingsOverlay } from "@/components/video-drawings-overlay"
 import { usePlaybackClock } from "@/hooks/use-playback-clock"
@@ -26,6 +32,8 @@ interface TrimmableVideoProps {
   blurRegions: BlurRegion[]
   drawings: VideoDrawing[]
   disabled?: boolean
+  // Shown at the end of the row under the trim bar (the edit button).
+  trailing?: ReactNode
   // Called when a handle is released, not on every drag step.
   onTrimChange: (trim: TrimRange) => void
 }
@@ -46,6 +54,7 @@ export function TrimmableVideo({
   blurRegions,
   drawings,
   disabled = false,
+  trailing,
   onTrimChange,
 }: TrimmableVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -177,11 +186,11 @@ export function TrimmableVideo({
   const endPercent = toPercent(range.endMs)
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-center overflow-hidden rounded-xl border bg-black shadow-sm">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex min-h-[200px] flex-1 items-center justify-center overflow-hidden rounded-[10px] bg-zinc-950">
         <div className="relative inline-block">
           <video
-            className="block max-h-[400px] max-w-full cursor-pointer"
+            className="block max-h-[calc(100vh-250px)] max-w-full cursor-pointer"
             onClick={togglePlay}
             onLoadedMetadata={handleLoadedMetadata}
             onPause={() => setIsPlaying(false)}
@@ -202,66 +211,66 @@ export function TrimmableVideo({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button
-          aria-label={isPlaying ? "Pause" : "Play"}
-          disabled={disabled}
-          onClick={togglePlay}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          {isPlaying ? (
-            <Pause className="h-4 w-4" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-        </Button>
-
+      <div
+        className="relative mt-1 h-7 shrink-0 touch-none select-none rounded-md border bg-muted"
+        onPointerDown={handleTrackPointerDown}
+        ref={trackRef}
+      >
         <div
-          className="relative h-10 flex-1 touch-none select-none rounded-lg bg-muted"
-          onPointerDown={handleTrackPointerDown}
-          ref={trackRef}
+          className="absolute inset-y-0 rounded-md border-2 border-primary bg-primary/10"
+          style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
+        />
+        <div
+          className="pointer-events-none absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded bg-foreground"
+          style={{ left: `${toPercent(currentMs)}%` }}
         >
-          <div
-            className="absolute inset-y-0 left-0 rounded-l-lg bg-foreground/10"
-            style={{ width: `${startPercent}%` }}
-          />
-          <div
-            className="absolute inset-y-0 right-0 rounded-r-lg bg-foreground/10"
-            style={{ width: `${100 - endPercent}%` }}
-          />
-          <div
-            className="absolute inset-y-0 rounded-md border-2 border-emerald-400 bg-emerald-400/10"
-            style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
-          />
-          <div
-            className="pointer-events-none absolute inset-y-1 w-0.5 -translate-x-1/2 rounded bg-foreground"
-            style={{ left: `${toPercent(currentMs)}%` }}
-          />
-          {(["start", "end"] as const).map((side) => (
-            <button
-              aria-label={side === "start" ? "Trim start" : "Trim end"}
-              className="absolute inset-y-0 flex w-4 -translate-x-1/2 cursor-ew-resize items-center justify-center rounded-md bg-emerald-400 text-emerald-950 focus-visible:outline-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed"
-              disabled={disabled}
-              key={side}
-              onKeyDown={handleHandleKeyDown(side)}
-              onPointerDown={handleHandlePointerDown(side)}
-              style={{
-                left: `${side === "start" ? startPercent : endPercent}%`,
-              }}
-              title="Drag to trim"
-              type="button"
-            >
-              <GripVertical className="h-4 w-4" />
-            </button>
-          ))}
+          <span className="absolute -top-2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rounded-full border border-border bg-background shadow" />
         </div>
+        {(["start", "end"] as const).map((side) => (
+          <button
+            aria-label={side === "start" ? "Trim start" : "Trim end"}
+            className="absolute inset-y-0 flex w-3 -translate-x-1/2 cursor-ew-resize items-center justify-center rounded-[5px] bg-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1 disabled:cursor-not-allowed"
+            disabled={disabled}
+            key={side}
+            onKeyDown={handleHandleKeyDown(side)}
+            onPointerDown={handleHandlePointerDown(side)}
+            style={{
+              left: `${side === "start" ? startPercent : endPercent}%`,
+            }}
+            title="Drag to keep only the part that shows the bug"
+            type="button"
+          >
+            <span className="h-2.5 w-0.5 rounded-full bg-white/85" />
+          </button>
+        ))}
       </div>
 
-      <p className="text-center font-medium text-sm">
-        {formatKeptDuration(range.endMs - range.startMs)}
-      </p>
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Button
+            aria-label={isPlaying ? "Pause" : "Play"}
+            disabled={disabled}
+            onClick={togglePlay}
+            size="icon-sm"
+            type="button"
+            variant="outline"
+          >
+            {isPlaying ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+          </Button>
+          <p className="truncate font-mono text-muted-foreground text-xs tabular-nums">
+            <span className="text-foreground">
+              {formatDuration(range.startMs)} – {formatDuration(range.endMs)}
+            </span>{" "}
+            · {formatKeptDuration(range.endMs - range.startMs)} of{" "}
+            {formatDuration(durationMs)}
+          </p>
+        </div>
+        {trailing}
+      </div>
     </div>
   )
 }

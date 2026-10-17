@@ -179,7 +179,7 @@ export function VideoEditor({
   const hasEdits = drawings.length > 0 || blurRegions.length > 0
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-5 lg:px-6">
       <AnnotationToolbar
         canRedo={overlays.canRedo}
         canUndo={overlays.canUndo}
@@ -192,10 +192,10 @@ export function VideoEditor({
         tools={VIDEO_TOOLS}
       />
 
-      <div className="flex justify-center overflow-hidden rounded-2xl bg-zinc-950 p-3 ring-1 ring-border">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[10px] bg-zinc-950 p-3">
         <div className="relative inline-block">
           <video
-            className="block max-h-[400px] max-w-full rounded-md"
+            className="block max-h-[max(240px,calc(100vh-340px))] max-w-full rounded-md"
             onLoadedMetadata={handleLoadedMetadata}
             onPause={() => setIsPlaying(false)}
             onPlay={() => setIsPlaying(true)}
@@ -277,6 +277,7 @@ export function VideoEditor({
       <EditorFooter
         applyLabel="Done"
         canClear={hasEdits}
+        hint="Go to the moment that shows the bug, then draw on the video."
         onApply={() => onApply(overlays.value)}
         onCancel={onCancel}
         onClear={() =>

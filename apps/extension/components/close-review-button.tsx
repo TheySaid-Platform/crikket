@@ -49,18 +49,19 @@ export function CloseReviewButton({
     <div className="relative">
       <Button
         aria-label="Close"
+        className="text-muted-foreground"
         onClick={() => (confirmDiscard ? setIsConfirming(true) : onClose())}
-        size="icon"
+        size="icon-sm"
         type="button"
-        variant="outline"
+        variant="ghost"
       >
-        <X className="h-4 w-4" />
+        <X className="h-[18px] w-[18px]" />
       </Button>
 
       {isConfirming ? (
         <DiscardConfirm
           captureLabel={captureLabel}
-          className="top-full left-0 mt-2"
+          className="top-full right-0 mt-2"
           onDiscard={onDiscard}
           onKeep={() => setIsConfirming(false)}
         />
@@ -85,7 +86,7 @@ export function DiscardConfirm({
   return (
     <div
       className={cn(
-        "absolute z-20 w-64 space-y-3 rounded-lg border bg-popover p-3 text-left text-popover-foreground shadow-lg",
+        "absolute z-20 w-72 space-y-3 rounded-lg border bg-popover p-3.5 text-left text-popover-foreground shadow-lg",
         className
       )}
       role="alertdialog"
@@ -93,20 +94,20 @@ export function DiscardConfirm({
       <div className="space-y-1">
         <p className="font-medium text-sm">Discard this {captureLabel}?</p>
         <p className="text-muted-foreground text-xs">
-          It has not been submitted yet.
+          It has not been sent yet.
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex justify-end gap-2">
+        <Button onClick={onKeep} size="sm" type="button" variant="outline">
+          Keep editing
+        </Button>
         <Button
+          className="bg-red-600 text-white hover:bg-red-700"
           onClick={onDiscard}
           size="sm"
           type="button"
-          variant="destructive"
         >
           Discard
-        </Button>
-        <Button onClick={onKeep} size="sm" type="button" variant="outline">
-          Keep editing
         </Button>
       </div>
     </div>
