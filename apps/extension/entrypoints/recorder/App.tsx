@@ -25,7 +25,6 @@ import type { Priority } from "@crikket/shared/constants/priorities"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { AlertCircle } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AllowMicrophoneStep } from "@/components/allow-microphone-step"
 import { CapturePreview } from "@/components/capture-preview"
 import { ChooseDisplayStep } from "@/components/choose-display-step"
 import { CloseReviewButton } from "@/components/close-review-button"
@@ -60,7 +59,6 @@ import {
 } from "@/lib/capture-context"
 import { packReplay, type ReplayEvent } from "@/lib/instant-replay/protocol"
 import { loadDebuggerSnapshot } from "@/lib/load-debugger-snapshot"
-import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
 import {
   buildCaptureContextSubmissionData,
   type DebuggerCaptureSummary,
@@ -154,7 +152,6 @@ function App() {
   const [submissionWarnings, setSubmissionWarnings] = useState<string[]>([])
   const [preSubmitWarnings, setPreSubmitWarnings] = useState<string[]>([])
   const [debuggerTitle, setDebuggerTitle] = useState<string | null>(null)
-  const [isWaitingForStartClick, setIsWaitingForStartClick] = useState(false)
   // How a full-page screenshot went (screens, whether it is complete).
   const [fullPageDetails, setFullPageDetails] =
     useState<FullPageDetails | null>(null)
@@ -511,15 +508,6 @@ function App() {
     }
   }, [getDebuggerSubmissionInput, markRecordingStopped, state])
 
-  // The first recording waits for a click; see AllowMicrophoneStep.
-  const startRecordingWhenReady = useCallback(async () => {
-    if (await isMicrophonePermissionUndecided()) {
-      setIsWaitingForStartClick(true)
-      return
-    }
-    await handleStartCapture()
-  }, [handleStartCapture])
-
   useRecorderInit({
     onCaptureTypeChange: setCaptureType,
     onRecordingLoaded: (recording: StoredRecording) => {
@@ -540,7 +528,6 @@ function App() {
       setRecordedDurationMs(null)
       setState("stopped")
     },
-    onStartRecording: startRecordingWhenReady,
     onError: (err) => setSubmitError(err),
   })
 
@@ -677,7 +664,6 @@ function App() {
 
   const error = captureError || submitError
   const isChoosingDisplay = captureType === "video" && videoSource === "display"
-  const idleMode = getIdleMode(isChoosingDisplay, isWaitingForStartClick)
 
   useEffect(() => {
     if (state === "recording") {
@@ -710,7 +696,10 @@ function App() {
       ) : null}
 
       {state === "idle" ? (
-        <IdleStep mode={idleMode} onStart={handleStartCapture} />
+        <IdleStep
+          isChoosingDisplay={isChoosingDisplay}
+          onStart={handleStartCapture}
+        />
       ) : null}
 
       {state === "recording" ? (
@@ -865,30 +854,15 @@ function getReportPageContext(
 }
 
 // What the recorder tab shows before recording starts.
-type IdleMode = "choose-display" | "allow-microphone" | "waiting"
-
-function getIdleMode(
-  isChoosingDisplay: boolean,
-  isWaitingForStartClick: boolean
-): IdleMode {
-  if (isChoosingDisplay) return "choose-display"
-  if (isWaitingForStartClick) return "allow-microphone"
-  return "waiting"
-}
-
 function IdleStep({
-  mode,
+  isChoosingDisplay,
   onStart,
 }: {
-  mode: IdleMode
+  isChoosingDisplay: boolean
   onStart: () => Promise<void>
 }) {
-  if (mode === "choose-display") {
+  if (isChoosingDisplay) {
     return <ChooseDisplayStep onChoose={onStart} />
-  }
-
-  if (mode === "allow-microphone") {
-    return <AllowMicrophoneStep onStart={onStart} />
   }
 
   return (

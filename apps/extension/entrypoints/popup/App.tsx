@@ -1,5 +1,6 @@
 import { AlertCircle } from "lucide-react"
 import { InstantReplayPanel } from "@/components/instant-replay-panel"
+import { MicrophoneProblemCard } from "@/components/microphone-problem-card"
 import { PopupCaptureActions } from "@/components/popup-capture-actions"
 import { PopupFooter, PopupHeader } from "@/components/popup-header"
 import { UnsentReportCard } from "@/components/unsent-report-card"
@@ -8,6 +9,7 @@ import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { useFullPageProgress } from "@/hooks/use-full-page-progress"
 import { useHotkeyTrigger } from "@/hooks/use-hotkey-trigger"
 import { useInstantReplay } from "@/hooks/use-instant-replay"
+import { useMicrophoneProblem } from "@/hooks/use-microphone-problem"
 import { usePopupCapture } from "@/hooks/use-popup-capture"
 import { usePopupMicToggle } from "@/hooks/use-popup-mic-toggle"
 import { usePopupRecordingStatus } from "@/hooks/use-popup-recording-status"
@@ -47,6 +49,7 @@ function App() {
   const { pendingReview, recordingError, reopenReview } = useUnfinishedCapture()
   const fullPageProgress = useFullPageProgress()
   const instantReplay = useInstantReplay()
+  const { microphoneProblem, fixMicrophone } = useMicrophoneProblem()
   // "Record This Tab" records in the background, without a recorder tab.
   const { backgroundRecording, backgroundRecordedMs } =
     useBackgroundRecordingStatus()
@@ -90,6 +93,13 @@ function App() {
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="text-sm">{error}</p>
         </div>
+      ) : null}
+
+      {microphoneProblem && !isRecording ? (
+        <MicrophoneProblemCard
+          onFix={fixMicrophone}
+          problem={microphoneProblem}
+        />
       ) : null}
 
       {showUnsentReport ? <UnsentReportCard onOpen={reopenReview} /> : null}
