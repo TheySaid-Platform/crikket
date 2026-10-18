@@ -94,8 +94,3 @@ env:
   # Server-only env (Better Auth + capture flags)
   ALLOWED_SIGNUP_DOMAINS: "theysaid.io"
   ENABLE_PAYMENTS: "false"
-
-  # When "true", deployment-web.yaml's command override hides the email/password
-  # form, the "Or continue with email" divider, and the "Don't have an account?
-  # Sign up" link on /login. UI-only — server-side endpoints stay enabled.
-  CRIKKET_HIDE_EMAIL_AUTH_UI: "true"
