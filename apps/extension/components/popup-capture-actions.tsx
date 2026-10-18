@@ -157,6 +157,19 @@ export function PopupCaptureActions({
     )
   }
 
+  // Only replacing the unsent report needs a confirm. It takes the place of
+  // the options, so its buttons are never below the fold.
+  if (pendingCaptureType && hasUnsentReport) {
+    return (
+      <PendingCapturePanel
+        captureType={pendingCaptureType}
+        isBusy={isBusy}
+        onCancel={onClearPendingCapture}
+        onContinue={() => onStartCapture(pendingCaptureType)}
+      />
+    )
+  }
+
   const shortcuts: Partial<Record<PopupCaptureType, string | null>> = {
     video: startRecordingShortcut,
     screenshot: startScreenshotShortcut,
@@ -167,7 +180,11 @@ export function PopupCaptureActions({
         disabled={isBusy}
         isSelected={pendingCaptureType === option.type}
         key={option.type}
-        onSelect={() => onRequestCapture(option.type)}
+        onSelect={() =>
+          hasUnsentReport
+            ? onRequestCapture(option.type)
+            : onStartCapture(option.type)
+        }
         option={option}
         shortcut={shortcuts[option.type] ?? null}
       />
@@ -180,29 +197,17 @@ export function PopupCaptureActions({
       </div>
 
       {instantReplayPanel}
-
-      {pendingCaptureType ? (
-        <PendingCapturePanel
-          captureType={pendingCaptureType}
-          hasUnsentReport={hasUnsentReport}
-          isBusy={isBusy}
-          onCancel={onClearPendingCapture}
-          onContinue={() => onStartCapture(pendingCaptureType)}
-        />
-      ) : null}
     </div>
   )
 }
 
 function PendingCapturePanel({
   captureType,
-  hasUnsentReport,
   isBusy,
   onContinue,
   onCancel,
 }: {
   captureType: PopupCaptureType
-  hasUnsentReport: boolean
   isBusy: boolean
   onContinue: () => void
   onCancel: () => void
@@ -212,11 +217,9 @@ function PendingCapturePanel({
       <p className="text-foreground/80 text-xs leading-relaxed">
         {PENDING_MESSAGES[captureType]}
       </p>
-      {hasUnsentReport ? (
-        <p className="font-medium text-amber-900 text-xs leading-relaxed">
-          Your unsent report will be deleted when this one starts.
-        </p>
-      ) : null}
+      <p className="font-medium text-amber-900 text-xs leading-relaxed">
+        Your unsent report will be deleted when this one starts.
+      </p>
       <div className="flex gap-2">
         <Button
           className={cn("flex-1", BRAND_BUTTON_CLASS)}

@@ -1,3 +1,4 @@
+import { apiKey } from "@better-auth/api-key"
 import { assertHostedPaymentsConfiguration } from "@crikket/billing/service/checkout/shared"
 import { assertOrganizationCanAddMembers } from "@crikket/billing/service/entitlements/organization-entitlements"
 import { processPolarWebhookPayload } from "@crikket/billing/service/webhooks/process-polar-webhook-payload"
@@ -5,6 +6,11 @@ import { db } from "@crikket/db"
 import * as schema from "@crikket/db/schema/auth"
 import { getPolarSdkConfig } from "@crikket/env/polar"
 import { env } from "@crikket/env/server"
+import {
+  MCP_ACCESS_KEY_NAME_MAX_LENGTH,
+  MCP_ACCESS_KEY_PERMISSIONS,
+  MCP_ACCESS_KEY_PREFIX,
+} from "@crikket/shared/constants/mcp"
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth"
 import { Polar } from "@polar-sh/sdk"
 import { betterAuth } from "better-auth"
@@ -24,6 +30,17 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 const allowedSignupDomains = env.ALLOWED_SIGNUP_DOMAINS
+
+// MCP access keys are created, listed and revoked only through our own oRPC
+// procedures, which bind each key to the caller's active organization. The
+// plugin's own HTTP routes would let a client set that binding itself.
+const apiKeyHttpPaths = [
+  "/api-key/create",
+  "/api-key/delete",
+  "/api-key/get",
+  "/api-key/list",
+  "/api-key/update",
+]
 
 const isProduction = env.NODE_ENV === "production"
 const trustedOrigins = Array.from(
@@ -117,6 +134,7 @@ export const auth = betterAuth({
   }),
   trustedOrigins,
   socialProviders,
+  disabledPaths: apiKeyHttpPaths,
   databaseHooks: {
     user: {
       create: {
@@ -206,6 +224,27 @@ export const auth = betterAuth({
         },
         beforeCreateInvitation: async ({ invitation }) => {
           await assertOrganizationCanAddMembers(invitation.organizationId)
+        },
+      },
+    }),
+    apiKey({
+      defaultPrefix: MCP_ACCESS_KEY_PREFIX,
+      enableMetadata: true,
+      requireName: true,
+      maximumNameLength: MCP_ACCESS_KEY_NAME_MAX_LENGTH,
+      startingCharactersConfig: {
+        shouldStore: true,
+        charactersLength: MCP_ACCESS_KEY_PREFIX.length + 4,
+      },
+      // @crikket/mcp limits each key with the current settings. The plugin
+      // copies its limits onto every key row, so changes would never reach
+      // keys that already exist.
+      rateLimit: {
+        enabled: false,
+      },
+      permissions: {
+        defaultPermissions: {
+          mcp: [...MCP_ACCESS_KEY_PERMISSIONS.mcp],
         },
       },
     }),

@@ -5,6 +5,7 @@ import { publicProcedure } from "../index"
 import { billingRouter } from "./billing"
 import { bugReportRouter } from "./bug-report"
 import { captureKeyRouter } from "./capture-key"
+import { mcpAccessKeyRouter } from "./mcp-access-key"
 import { organizationRouter } from "./organization"
 
 export const appRouter = {
@@ -14,6 +15,7 @@ export const appRouter = {
   billing: billingRouter,
   bugReport: bugReportRouter,
   captureKey: captureKeyRouter,
+  mcpAccessKey: mcpAccessKeyRouter,
   organization: organizationRouter,
 }
 export type AppRouter = typeof appRouter

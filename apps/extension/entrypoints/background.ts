@@ -3,6 +3,7 @@ import { registerBackgroundRecordingListeners } from "@/lib/background-recording
 import { registerDebuggerBackgroundListeners } from "@/lib/bug-report-debugger/engine/background"
 import { RECORDER_TAB_ID_STORAGE_KEY } from "@/lib/capture-context"
 import { registerInstantReplayListeners } from "@/lib/instant-replay/background"
+import { openMicrophonePage } from "@/lib/microphone-permission"
 import {
   clearStaleRecordingState,
   handleRecorderHotkeyCommand,
@@ -12,6 +13,14 @@ export default defineBackground(() => {
   registerDebuggerBackgroundListeners()
   registerBackgroundRecordingListeners()
   registerInstantReplayListeners()
+
+  // Asked once up front, so the first recording also starts on the user's tab.
+  chrome.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason !== chrome.runtime.OnInstalledReason.INSTALL) return
+    openMicrophonePage().catch((error: unknown) => {
+      reportNonFatalError("Failed to open the microphone page", error)
+    })
+  })
 
   chrome.commands.onCommand.addListener((command) => {
     handleRecorderHotkeyCommand(command).catch(async (error: unknown) => {

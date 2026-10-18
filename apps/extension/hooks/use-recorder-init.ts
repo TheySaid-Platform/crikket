@@ -17,7 +17,6 @@ interface UseRecorderInitProps {
   onScreenshotLoaded: (blob: Blob, fullPage: FullPageDetails | null) => void
   onRecordingLoaded: (recording: StoredRecording) => void
   onReplayLoaded: (replay: StoredReplay) => void
-  onStartRecording: () => void
   onError: (error: string) => void
 }
 
@@ -66,7 +65,6 @@ export function useRecorderInit({
   onScreenshotLoaded,
   onRecordingLoaded,
   onReplayLoaded,
-  onStartRecording,
   onError,
 }: UseRecorderInitProps) {
   const autoStartChecked = useRef(false)
@@ -105,22 +103,13 @@ export function useRecorderInit({
             console.error("Failed to load recording:", err)
             onError("Failed to load the recording")
           })
-        return
       }
-
-      chrome.storage.local.get(["startRecordingImmediately"], (result) => {
-        if (result.startRecordingImmediately) {
-          chrome.storage.local.remove(["startRecordingImmediately"])
-          onStartRecording()
-        }
-      })
     }
   }, [
     onCaptureTypeChange,
     onScreenshotLoaded,
     onRecordingLoaded,
     onReplayLoaded,
-    onStartRecording,
     onError,
   ])
 }

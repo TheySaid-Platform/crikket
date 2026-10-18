@@ -16,6 +16,7 @@ import {
 } from "@crikket/ui/components/ui/sidebar"
 import {
   BookOpen,
+  Bot,
   Building2,
   Chrome,
   CreditCard,
@@ -66,6 +67,11 @@ const navSettings = [
     title: "Public Keys",
     url: "/settings/keys" as const,
     icon: KeyRound,
+  },
+  {
+    title: "AI Tools (MCP)",
+    url: "/settings/mcp" as const,
+    icon: Bot,
   },
   {
     title: "Billing",
