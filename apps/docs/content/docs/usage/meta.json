@@ -1,5 +1,5 @@
 {
   "title": "Capture",
   "defaultOpen": true,
-  "pages": ["!index", "quick-start", "integration"]
+  "pages": ["!index", "quick-start", "integration", "ai-tools"]
 }

@@ -6,7 +6,17 @@ import {
 } from "@crikket/db/schema/bug-report"
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { retryOnUniqueViolation } from "@crikket/shared/lib/server/retry-on-unique-violation"
-import { and, asc, count, eq, ilike, or, type SQL, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  count,
+  eq,
+  ilike,
+  inArray,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm"
 import { nanoid } from "nanoid"
 import { z } from "zod"
 
@@ -144,6 +154,9 @@ export interface BugReportNetworkRequestPayload {
   responseBody: string | null
 }
 
+export type BugReportNetworkRequestDetails = BugReportNetworkRequestListItem &
+  BugReportNetworkRequestPayload
+
 export interface BugReportNetworkRequestsPageInput {
   bugReportId: string
   limit: number
@@ -171,6 +184,51 @@ export async function clearBugReportDebuggerData(
   ])
 }
 
+const networkRequestListColumns = {
+  id: bugReportNetworkRequest.id,
+  method: bugReportNetworkRequest.method,
+  url: bugReportNetworkRequest.url,
+  status: bugReportNetworkRequest.status,
+  duration: bugReportNetworkRequest.duration,
+  requestHeaders: bugReportNetworkRequest.requestHeaders,
+  responseHeaders: bugReportNetworkRequest.responseHeaders,
+  timestamp: bugReportNetworkRequest.timestamp,
+  offset: bugReportNetworkRequest.offset,
+  tabId: bugReportNetworkRequest.tabId,
+  pageUrl: bugReportNetworkRequest.pageUrl,
+  failure: bugReportNetworkRequest.failure,
+}
+
+function toNetworkRequestListItem(request: {
+  id: string
+  method: string
+  url: string
+  status: number | null
+  duration: number | null
+  requestHeaders: unknown
+  responseHeaders: unknown
+  timestamp: Date
+  offset: number | null
+  tabId: number | null
+  pageUrl: string | null
+  failure: string | null
+}): BugReportNetworkRequestListItem {
+  return {
+    id: request.id,
+    method: request.method,
+    url: request.url,
+    status: request.status,
+    duration: request.duration,
+    requestHeaders: asStringRecord(request.requestHeaders),
+    responseHeaders: asStringRecord(request.responseHeaders),
+    timestamp: request.timestamp.toISOString(),
+    offset: request.offset,
+    tabId: request.tabId,
+    pageUrl: request.pageUrl,
+    failure: request.failure,
+  }
+}
+
 export async function countBugReportNetworkRequests(input: {
   bugReportId: string
   search?: string
@@ -194,42 +252,79 @@ export async function getBugReportNetworkRequestsPage({
   BugReportNetworkRequestListItem[]
 > {
   const networkRequests = await db
-    .select({
-      id: bugReportNetworkRequest.id,
-      method: bugReportNetworkRequest.method,
-      url: bugReportNetworkRequest.url,
-      status: bugReportNetworkRequest.status,
-      duration: bugReportNetworkRequest.duration,
-      requestHeaders: bugReportNetworkRequest.requestHeaders,
-      responseHeaders: bugReportNetworkRequest.responseHeaders,
-      timestamp: bugReportNetworkRequest.timestamp,
-      offset: bugReportNetworkRequest.offset,
-      tabId: bugReportNetworkRequest.tabId,
-      pageUrl: bugReportNetworkRequest.pageUrl,
-      failure: bugReportNetworkRequest.failure,
-    })
+    .select(networkRequestListColumns)
     .from(bugReportNetworkRequest)
     .where(buildNetworkRequestsWhere({ bugReportId, search, tabId }))
-    .orderBy(asc(bugReportNetworkRequest.timestamp))
+    // The id breaks ties between rows with the same timestamp, so pages
+    // never overlap or skip a row.
+    .orderBy(
+      asc(bugReportNetworkRequest.timestamp),
+      asc(bugReportNetworkRequest.id)
+    )
     .limit(limit)
     .offset(offset)
 
-  return networkRequests.map((request): BugReportNetworkRequestListItem => {
-    return {
-      id: request.id,
-      method: request.method,
-      url: request.url,
-      status: request.status,
-      duration: request.duration,
-      requestHeaders: asStringRecord(request.requestHeaders),
-      responseHeaders: asStringRecord(request.responseHeaders),
-      timestamp: request.timestamp.toISOString(),
-      offset: request.offset,
-      tabId: request.tabId,
-      pageUrl: request.pageUrl,
-      failure: request.failure,
-    }
-  })
+  return networkRequests.map(toNetworkRequestListItem)
+}
+
+export async function getBugReportNetworkRequestBodies(input: {
+  bugReportId: string
+  requestIds: string[]
+}): Promise<Map<string, BugReportNetworkRequestPayload>> {
+  if (input.requestIds.length === 0) {
+    return new Map()
+  }
+
+  const rows = await db
+    .select({
+      id: bugReportNetworkRequest.id,
+      requestBody: bugReportNetworkRequest.requestBody,
+      responseBody: bugReportNetworkRequest.responseBody,
+    })
+    .from(bugReportNetworkRequest)
+    .where(
+      and(
+        eq(bugReportNetworkRequest.bugReportId, input.bugReportId),
+        inArray(bugReportNetworkRequest.id, input.requestIds)
+      )
+    )
+
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { requestBody: row.requestBody, responseBody: row.responseBody },
+    ])
+  )
+}
+
+export async function getBugReportNetworkRequestDetails({
+  bugReportId,
+  requestId,
+}: BugReportNetworkRequestPayloadInput): Promise<BugReportNetworkRequestDetails | null> {
+  const [request] = await db
+    .select({
+      ...networkRequestListColumns,
+      requestBody: bugReportNetworkRequest.requestBody,
+      responseBody: bugReportNetworkRequest.responseBody,
+    })
+    .from(bugReportNetworkRequest)
+    .where(
+      and(
+        eq(bugReportNetworkRequest.bugReportId, bugReportId),
+        eq(bugReportNetworkRequest.id, requestId)
+      )
+    )
+    .limit(1)
+
+  if (!request) {
+    return null
+  }
+
+  return {
+    ...toNetworkRequestListItem(request),
+    requestBody: request.requestBody,
+    responseBody: request.responseBody,
+  }
 }
 
 export async function getBugReportNetworkRequestPayload({
@@ -446,7 +541,7 @@ export async function getBugReportDebuggerEventsData(
       })
       .from(bugReportAction)
       .where(eq(bugReportAction.bugReportId, bugReportId))
-      .orderBy(asc(bugReportAction.timestamp)),
+      .orderBy(asc(bugReportAction.timestamp), asc(bugReportAction.id)),
     db
       .select({
         id: bugReportLog.id,
@@ -460,7 +555,7 @@ export async function getBugReportDebuggerEventsData(
       })
       .from(bugReportLog)
       .where(eq(bugReportLog.bugReportId, bugReportId))
-      .orderBy(asc(bugReportLog.timestamp)),
+      .orderBy(asc(bugReportLog.timestamp), asc(bugReportLog.id)),
   ])
 
   return {

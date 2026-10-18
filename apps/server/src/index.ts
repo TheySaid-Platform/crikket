@@ -9,6 +9,9 @@ import { runBugReportIngestionPass } from "@crikket/bug-reports/lib/ingestion-jo
 import { runStalePendingBugReportCleanupPass } from "@crikket/bug-reports/lib/orphan-cleanup"
 import { runArtifactCleanupPass } from "@crikket/bug-reports/lib/storage"
 import { env } from "@crikket/env/server"
+import { tooManyRequests as mcpTooManyRequests } from "@crikket/mcp/handler"
+import { createCrikketMcpRequestHandler } from "@crikket/mcp/route"
+import { MCP_ENDPOINT_PATH } from "@crikket/shared/constants/mcp"
 import { OpenAPIHandler } from "@orpc/openapi/fetch"
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins"
 import { onError } from "@orpc/server"
@@ -143,6 +146,34 @@ app.post("/api/embed/bug-report-finalize", (c) => {
     shareOrigin: captureShareOrigin,
   })
 })
+
+const handleMcpRequest = createCrikketMcpRequestHandler({
+  appOrigin: captureShareOrigin,
+  limitUser: async ({ request, userId }) => {
+    const decision = await evaluateRpcRateLimit(request, {
+      userId,
+      skipIp: true,
+    })
+    return decision.allowed
+      ? { allowed: true }
+      : { allowed: false, retryAfterSeconds: decision.retryAfterSeconds }
+  },
+})
+
+app.on(
+  ["GET", "POST", "DELETE"],
+  [MCP_ENDPOINT_PATH, `${MCP_ENDPOINT_PATH}/`],
+  async (c) => {
+    const ipRateLimitDecision = await evaluateRpcRateLimit(c.req.raw, {
+      skipUser: true,
+    })
+    if (!ipRateLimitDecision.allowed) {
+      return mcpTooManyRequests(ipRateLimitDecision.retryAfterSeconds)
+    }
+
+    return handleMcpRequest(c.req.raw)
+  }
+)
 
 const cleanupInterval = setInterval(() => {
   runArtifactCleanupPass({ limit: 50 }).catch((error: unknown) => {

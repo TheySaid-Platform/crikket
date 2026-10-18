@@ -1,9 +1,11 @@
 import { buildPaginationMeta } from "@crikket/shared/lib/server/pagination"
 import { ORPCError } from "@orpc/server"
-
+import { z } from "zod"
 import {
   countBugReportNetworkRequests,
   getBugReportDebuggerEventsData,
+  getBugReportNetworkRequestBodies as getBugReportNetworkRequestBodiesData,
+  getBugReportNetworkRequestDetails as getBugReportNetworkRequestDetailsData,
   getBugReportNetworkRequestPayload as getBugReportNetworkRequestPayloadData,
   getBugReportNetworkRequestsPage,
 } from "../lib/debugger"
@@ -14,6 +16,7 @@ import {
   debuggerNetworkRequestsInputSchema,
   normalizeDebuggerNetworkRequestPagination,
 } from "../lib/utils"
+
 import { o } from "./context"
 
 export const getBugReportDebuggerEvents = o
@@ -80,4 +83,54 @@ export const getBugReportNetworkRequestPayload = o
     }
 
     return payload
+  })
+
+/**
+ * One request with its headers and bodies. Used by the MCP server, which
+ * needs a single request without paging through the whole list.
+ */
+export const getBugReportNetworkRequestDetails = o
+  .input(debuggerNetworkRequestPayloadInputSchema)
+  .handler(async ({ context, input }) => {
+    await assertBugReportAccessById({
+      id: input.id,
+      session: context.session,
+    })
+
+    const details = await getBugReportNetworkRequestDetailsData({
+      bugReportId: input.id,
+      requestId: input.requestId,
+    })
+
+    if (!details) {
+      throw new ORPCError("NOT_FOUND", { message: "Network request not found" })
+    }
+
+    return details
+  })
+
+const MAX_BODY_REQUEST_IDS = 200
+
+/**
+ * Request and response bodies for several requests in one query. Used by the
+ * MCP server to show bodies inline in request lists.
+ */
+export const getBugReportNetworkRequestBodies = o
+  .input(
+    z.object({
+      id: z.string().min(1),
+      requestIds: z.array(z.string().min(1)).max(MAX_BODY_REQUEST_IDS),
+    })
+  )
+  .handler(async ({ context, input }) => {
+    await assertBugReportAccessById({
+      id: input.id,
+      session: context.session,
+    })
+
+    const bodies = await getBugReportNetworkRequestBodiesData({
+      bugReportId: input.id,
+      requestIds: input.requestIds,
+    })
+    return Object.fromEntries(bodies)
   })

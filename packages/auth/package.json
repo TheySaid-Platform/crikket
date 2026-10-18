@@ -21,6 +21,7 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@better-auth/api-key": "1.5.0",
     "@crikket/billing": "workspace:*",
     "@crikket/db": "workspace:*",
     "@crikket/env": "workspace:*",
