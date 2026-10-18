@@ -1,7 +1,7 @@
 import { AlertCircle } from "lucide-react"
 import { InstantReplayPanel } from "@/components/instant-replay-panel"
 import { PopupCaptureActions } from "@/components/popup-capture-actions"
-import { PopupFooter, PopupHeader } from "@/components/popup-header"
+import { PopupHeader } from "@/components/popup-header"
 import { UnsentReportCard } from "@/components/unsent-report-card"
 import { useBackgroundRecordingStatus } from "@/hooks/use-background-recording-status"
 import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
@@ -79,7 +79,7 @@ function App() {
   })
 
   return (
-    <div className="w-[360px] space-y-4 bg-linear-to-b from-slate-100 to-background p-3.5">
+    <div className="w-[480px] space-y-3 bg-linear-to-b from-slate-100 to-background p-3.5">
       <PopupHeader />
 
       {error ? (
@@ -137,8 +137,6 @@ function App() {
         stopRecordingShortcut={shortcuts.stopRecording}
         togglePauseShortcut={shortcuts.togglePause}
       />
-
-      <PopupFooter />
     </div>
   )
 }

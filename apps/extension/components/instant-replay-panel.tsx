@@ -31,28 +31,47 @@ export function InstantReplayPanel({
   disabled,
 }: InstantReplayPanelProps) {
   return (
-    <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs">
-      <div className="flex items-start gap-3">
+    <div className="space-y-2.5 rounded-2xl border border-border/60 bg-card p-3 shadow-xs">
+      <div className="flex items-center gap-2">
         <span
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br text-white shadow-md",
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br text-white shadow-md",
             replay.isEnabled
               ? "from-amber-500 to-pink-500 shadow-amber-500/30"
               : "from-zinc-400 to-zinc-500 shadow-zinc-500/20"
           )}
         >
-          <History className="h-5 w-5" />
+          <History className="h-4 w-4" />
         </span>
-        <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="min-w-0 flex-1">
           <p className="font-semibold text-sm">
             {replay.isEnabled ? "Instant replay is on" : "Instant replay"}
           </p>
-          <p className="text-muted-foreground text-xs leading-snug">
+          <p className="truncate text-muted-foreground text-xs">
             {replay.isEnabled
-              ? `Crikket keeps the last ${WINDOW_MINUTES} minutes with console and network. Nothing is uploaded until you send a report.`
-              : `Found a bug you didn't record? Crikket keeps the last ${WINDOW_MINUTES} minutes, so you can report it after it happens.`}
+              ? `Keeps the last ${WINDOW_MINUTES} min; nothing uploads until you share`
+              : `Report a bug after it happens: keeps the last ${WINDOW_MINUTES} min`}
           </p>
         </div>
+        {replay.isEnabled ? (
+          <Button
+            disabled={replay.isSaving}
+            onClick={() => replay.setEnabled(false)}
+            size="sm"
+            variant="ghost"
+          >
+            Turn off
+          </Button>
+        ) : (
+          <Button
+            disabled={disabled}
+            onClick={() => replay.setEnabled(true)}
+            size="sm"
+            variant="outline"
+          >
+            Turn on
+          </Button>
+        )}
       </div>
 
       {replay.isEnabled ? <VideoRow replay={replay} /> : null}
@@ -68,41 +87,18 @@ export function InstantReplayPanel({
       ) : null}
 
       {replay.isEnabled ? (
-        <div className="flex gap-2">
-          <Button
-            className={cn("flex-1 justify-between", BRAND_BUTTON_CLASS)}
-            disabled={disabled || replay.isSaving}
-            onClick={replay.save}
-            size="sm"
-          >
-            {replay.isSaving
-              ? "Opening the replay..."
-              : `Share the last ${WINDOW_MINUTES} minutes`}
-            <ShortcutKbd
-              className="bg-white/15 text-white"
-              shortcut={shortcut}
-            />
-          </Button>
-          <Button
-            disabled={replay.isSaving}
-            onClick={() => replay.setEnabled(false)}
-            size="sm"
-            variant="ghost"
-          >
-            Turn off
-          </Button>
-        </div>
-      ) : (
         <Button
-          className="w-full"
-          disabled={disabled}
-          onClick={() => replay.setEnabled(true)}
+          className={cn("w-full justify-between", BRAND_BUTTON_CLASS)}
+          disabled={disabled || replay.isSaving}
+          onClick={replay.save}
           size="sm"
-          variant="outline"
         >
-          Turn on instant replay
+          {replay.isSaving
+            ? "Opening the replay..."
+            : `Share the last ${WINDOW_MINUTES} minutes`}
+          <ShortcutKbd className="bg-white/15 text-white" shortcut={shortcut} />
         </Button>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -113,8 +109,8 @@ function VideoRow({ replay }: { replay: InstantReplayControls }) {
   const isBusy = replay.isStartingVideo || replay.isSaving
 
   return (
-    <div className="space-y-2 rounded-xl bg-muted/60 p-2.5">
-      <p className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-muted/60 px-2.5 py-2">
+      <p className="flex flex-1 items-center gap-2 text-xs">
         <span
           className={cn(
             "h-2 w-2 shrink-0 rounded-full",

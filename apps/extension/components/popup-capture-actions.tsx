@@ -62,7 +62,7 @@ const RECORD_OPTIONS: CaptureOption[] = [
   {
     type: "video",
     title: "This tab",
-    description: "Video, console and network",
+    description: "Video, console & network",
     icon: Video,
     accent: "from-rose-500 to-orange-400 shadow-rose-500/30",
   },
@@ -174,25 +174,12 @@ export function PopupCaptureActions({
     ))
 
   return (
-    <div className="space-y-4">
-      <section className="space-y-2">
-        <SectionLabel>Record</SectionLabel>
-        <div className="grid grid-cols-2 gap-2">
-          {renderTiles(RECORD_OPTIONS)}
-        </div>
-      </section>
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {renderTiles([...RECORD_OPTIONS, ...CAPTURE_OPTIONS])}
+      </div>
 
-      <section className="space-y-2">
-        <SectionLabel>Capture</SectionLabel>
-        <div className="grid grid-cols-2 gap-2">
-          {renderTiles(CAPTURE_OPTIONS)}
-        </div>
-      </section>
-
-      <section className="space-y-2">
-        <SectionLabel>Instant replay</SectionLabel>
-        {instantReplayPanel}
-      </section>
+      {instantReplayPanel}
 
       {pendingCaptureType ? (
         <PendingCapturePanel
@@ -299,14 +286,6 @@ function FullPageProgressPanel({
   )
 }
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <p className="px-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
-      {children}
-    </p>
-  )
-}
-
 function CaptureTile({
   option,
   shortcut,
@@ -325,7 +304,7 @@ function CaptureTile({
     <button
       aria-pressed={isSelected}
       className={cn(
-        "group relative flex flex-col items-start gap-3 rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-xs transition-all duration-200",
+        "group relative flex flex-col gap-1.5 rounded-2xl border border-border/60 bg-card p-3 text-left shadow-xs transition-all duration-200",
         "hover:-translate-y-0.5 hover:border-border hover:shadow-lg",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-60",
@@ -335,25 +314,27 @@ function CaptureTile({
       onClick={onSelect}
       type="button"
     >
-      <span
-        className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br text-white shadow-md transition-transform duration-200 group-hover:scale-105",
-          option.accent
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="space-y-0.5">
-        <span className="block font-semibold text-sm">{option.title}</span>
-        <span className="block text-muted-foreground text-xs leading-snug">
-          {option.description}
+      <span className="flex items-center gap-2">
+        <span
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br text-white shadow-md transition-transform duration-200 group-hover:scale-105",
+            option.accent
+          )}
+        >
+          <Icon className="h-4 w-4" />
         </span>
-      </span>
-      {shortcut ? (
-        <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium font-mono text-[10px] text-muted-foreground">
-          {shortcut}
+        <span className="min-w-0 flex-1 truncate font-semibold text-sm">
+          {option.title}
         </span>
-      ) : null}
+        {shortcut ? (
+          <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-medium font-mono text-[10px] text-muted-foreground">
+            {shortcut}
+          </span>
+        ) : null}
+      </span>
+      <span className="block text-muted-foreground text-xs leading-snug">
+        {option.description}
+      </span>
     </button>
   )
 }
