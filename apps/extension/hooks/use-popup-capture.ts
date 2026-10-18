@@ -22,7 +22,10 @@ import {
   VIDEO_SOURCE_QUERY_PARAM,
 } from "@/lib/capture-context"
 import { INSTANT_REPLAY_MESSAGE } from "@/lib/instant-replay/protocol"
-import { isMicrophonePermissionUndecided } from "@/lib/microphone-permission"
+import {
+  openMicrophonePage,
+  shouldAskForMicrophone,
+} from "@/lib/microphone-permission"
 import { delay } from "@/lib/utils"
 
 // "video" records the current tab; "display" records the full screen, following
@@ -72,12 +75,23 @@ export function usePopupCapture(): UsePopupCaptureReturn {
   const startCapture = async (captureType: PopupCaptureType) => {
     setIsCapturing(true)
     setCaptureError(null)
+    // Keeps the picked tile marked while the capture starts.
+    setPendingCaptureType(captureType)
 
     let debuggerSessionId: string | null = null
 
     try {
-      const captureContext = await getActiveTabContext()
       const activeTab = await getActiveCaptureTab()
+
+      // Only until the user has answered once: the microphone page asks, then
+      // the user records here on their tab.
+      if (!isScreenshotType(captureType) && (await shouldAskForMicrophone())) {
+        await openMicrophonePage(activeTab.id)
+        window.close()
+        return
+      }
+
+      const captureContext = await getActiveTabContext()
 
       // Chrome cannot capture a tab twice, so instant replay's video gives
       // way to a recording.
@@ -213,43 +227,15 @@ async function startVideoCapture(input: {
   await runCountdown(input.setRecordingCountdown)
 
   await chrome.storage.local.remove([RECORDING_COUNTDOWN_ENDS_AT_STORAGE_KEY])
-
-  // Chrome only asks for the microphone on a visible page, so the first
-  // recording uses the recorder tab (see AllowMicrophoneStep).
-  if (!(await isMicrophonePermissionUndecided())) {
-    await chrome.storage.local.set({
-      [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
-      [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
-    })
-    await requestBackgroundRecording({
-      source: "tab",
-      tabId: input.activeTab.id,
-      debuggerSessionId: input.debuggerSessionId,
-    })
-    return
-  }
-
   await chrome.storage.local.set({
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
-    [CAPTURE_TAB_ID_STORAGE_KEY]: input.activeTab.id,
-    startRecordingImmediately: true,
+    [RECORDING_IN_PROGRESS_STORAGE_KEY]: false,
   })
-
-  const recorderUrl = appendDebuggerSessionIdToUrl(
-    chrome.runtime.getURL("/recorder.html?captureType=video"),
-    input.debuggerSessionId
-  )
-
-  const recorderTab = await chrome.tabs.create({
-    active: true,
-    url: recorderUrl,
+  await requestBackgroundRecording({
+    source: "tab",
+    tabId: input.activeTab.id,
+    debuggerSessionId: input.debuggerSessionId,
   })
-
-  if (typeof recorderTab.id === "number") {
-    await chrome.storage.local.set({
-      [RECORDER_TAB_ID_STORAGE_KEY]: recorderTab.id,
-    })
-  }
 }
 
 // Returns false when Chrome would not show the screen picker from the
@@ -290,11 +276,9 @@ async function startDisplayCapture(input: {
     [CAPTURE_CONTEXT_STORAGE_KEY]: input.captureContext,
   })
 
-  // The first recording keeps the recorder tab (see ChooseDisplayStep).
-  if (
-    !(await isMicrophonePermissionUndecided()) &&
-    (await startBackgroundDisplayCapture(input))
-  ) {
+  // The recorder tab only when Chrome would not show the picker here (see
+  // ChooseDisplayStep).
+  if (await startBackgroundDisplayCapture(input)) {
     return
   }
 

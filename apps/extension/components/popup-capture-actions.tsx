@@ -63,7 +63,7 @@ const RECORD_OPTIONS: CaptureOption[] = [
   {
     type: "video",
     title: "This tab",
-    description: "Video, console, network",
+    description: "Video, console & network",
     icon: Video,
     accent: "bg-rose-50 text-rose-600",
   },
@@ -87,7 +87,7 @@ const CAPTURE_OPTIONS: CaptureOption[] = [
   {
     type: "fullpage",
     title: "Long screenshot",
-    description: "Scrolls down the page",
+    description: "From where you are, down the page",
     icon: ScrollText,
     accent: "bg-emerald-50 text-emerald-600",
   },
@@ -158,6 +158,19 @@ export function PopupCaptureActions({
     )
   }
 
+  // Only replacing the unsent report needs a confirm. It takes the place of
+  // the options, so its buttons are never below the fold.
+  if (pendingCaptureType && hasUnsentReport) {
+    return (
+      <PendingCapturePanel
+        captureType={pendingCaptureType}
+        isBusy={isBusy}
+        onCancel={onClearPendingCapture}
+        onContinue={() => onStartCapture(pendingCaptureType)}
+      />
+    )
+  }
+
   const shortcuts: Partial<Record<PopupCaptureType, string | null>> = {
     video: startRecordingShortcut,
     screenshot: startScreenshotShortcut,
@@ -168,61 +181,34 @@ export function PopupCaptureActions({
         disabled={isBusy}
         isSelected={pendingCaptureType === option.type}
         key={option.type}
-        onSelect={() => onRequestCapture(option.type)}
+        onSelect={() =>
+          hasUnsentReport
+            ? onRequestCapture(option.type)
+            : onStartCapture(option.type)
+        }
         option={option}
         shortcut={shortcuts[option.type] ?? null}
       />
     ))
 
-  // The confirmation sits under the tiles it belongs to, so it stays next to
-  // the picked tile and inside the popup's 600px.
-  const renderPending = (options: CaptureOption[]) =>
-    pendingCaptureType &&
-    options.some((option) => option.type === pendingCaptureType) ? (
-      <PendingCapturePanel
-        captureType={pendingCaptureType}
-        hasUnsentReport={hasUnsentReport}
-        isBusy={isBusy}
-        onCancel={onClearPendingCapture}
-        onContinue={() => onStartCapture(pendingCaptureType)}
-      />
-    ) : null
-
   return (
-    <div className="space-y-2.5">
-      <section className="space-y-1.5">
-        <SectionLabel>Record</SectionLabel>
-        <div className="grid grid-cols-2 gap-2">
-          {renderTiles(RECORD_OPTIONS)}
-        </div>
-      </section>
-      {renderPending(RECORD_OPTIONS)}
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {renderTiles([...RECORD_OPTIONS, ...CAPTURE_OPTIONS])}
+      </div>
 
-      <section className="space-y-1.5">
-        <SectionLabel>Capture</SectionLabel>
-        <div className="grid grid-cols-2 gap-2">
-          {renderTiles(CAPTURE_OPTIONS)}
-        </div>
-      </section>
-      {renderPending(CAPTURE_OPTIONS)}
-
-      <section className="space-y-1.5">
-        <SectionLabel>Instant replay</SectionLabel>
-        {instantReplayPanel}
-      </section>
+      {instantReplayPanel}
     </div>
   )
 }
 
 function PendingCapturePanel({
   captureType,
-  hasUnsentReport,
   isBusy,
   onContinue,
   onCancel,
 }: {
   captureType: PopupCaptureType
-  hasUnsentReport: boolean
   isBusy: boolean
   onContinue: () => void
   onCancel: () => void
@@ -232,11 +218,9 @@ function PendingCapturePanel({
       <p className="text-foreground/80 text-xs leading-relaxed">
         {PENDING_MESSAGES[captureType]}
       </p>
-      {hasUnsentReport ? (
-        <p className="font-medium text-amber-800 text-xs leading-relaxed">
-          Your unsent report will be deleted when this one starts.
-        </p>
-      ) : null}
+      <p className="font-medium text-amber-800 text-xs leading-relaxed">
+        Your unsent report will be deleted when this one starts.
+      </p>
       <div className="flex gap-1.5">
         <Button
           className={cn("flex-1", BRAND_BUTTON_CLASS)}
@@ -312,14 +296,6 @@ function FullPageProgressPanel({
   )
 }
 
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <p className="px-0.5 font-semibold text-[10.5px] text-muted-foreground uppercase tracking-[0.06em]">
-      {children}
-    </p>
-  )
-}
-
 function CaptureTile({
   option,
   shortcut,
@@ -338,7 +314,7 @@ function CaptureTile({
     <button
       aria-pressed={isSelected}
       className={cn(
-        "flex min-h-[88px] min-w-0 flex-col rounded-lg border bg-card p-2.5 text-left shadow-xs transition-colors",
+        "flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card p-2.5 text-left shadow-xs transition-colors",
         "hover:border-foreground/20",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-60",
@@ -348,21 +324,25 @@ function CaptureTile({
       onClick={onSelect}
       type="button"
     >
-      <span className="flex w-full items-center justify-between">
+      <span className="flex items-center gap-2">
         <span
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-[9px]",
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]",
             option.accent
           )}
         >
           <Icon className="h-[17px] w-[17px]" />
         </span>
-        <ShortcutKbd className={SHORTCUT_CHIP_CLASS} shortcut={shortcut} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-[13px]">
+          {option.title}
+        </span>
+        {shortcut ? (
+          <span className="shrink-0 rounded-[5px] border bg-background px-1 font-mono text-[10px] text-muted-foreground">
+            {shortcut}
+          </span>
+        ) : null}
       </span>
-      <span className="mt-2 block font-semibold text-[13px]">
-        {option.title}
-      </span>
-      <span className="block truncate text-[11px] text-muted-foreground">
+      <span className="block text-[11.5px] text-muted-foreground leading-snug">
         {option.description}
       </span>
     </button>
@@ -395,9 +375,7 @@ function getRecordingHint(isPaused: boolean, hasFloatingBar: boolean) {
 const DARK_OUTLINE_BUTTON_CLASS =
   "h-9 w-full border-white/12 bg-white/5 text-white shadow-none hover:bg-white/10 hover:text-white"
 
-// Shortcut keys on the tiles and buttons: small, quiet chips.
-const SHORTCUT_CHIP_CLASS =
-  "h-[18px] min-w-0 rounded-[5px] border bg-background px-1 font-mono text-[10px] text-muted-foreground"
+// Shortcut keys on the dark recording card: small, quiet chips.
 const SHORTCUT_ON_DARK_CLASS =
   "h-[18px] min-w-0 rounded-[5px] bg-white/15 px-1 font-mono text-[10px] text-white"
 

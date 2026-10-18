@@ -8,16 +8,18 @@ interface StartPromptProps {
   title: string
   description: string
   actionLabel: string
+  busyLabel?: string
   onStart: () => Promise<void>
 }
 
-// A single call to action for the recorder tab, used when Chrome needs a click
-// before it can record (screen picker, first microphone prompt).
+// A single call to action, used when Chrome needs a page of ours before it can
+// record (screen picker, microphone prompt).
 export function StartPrompt({
   icon: Icon,
   title,
   description,
   actionLabel,
+  busyLabel = "Starting...",
   onStart,
 }: StartPromptProps) {
   const [isStarting, setIsStarting] = useState(false)
@@ -45,7 +47,7 @@ export function StartPrompt({
           }
         }}
       >
-        {isStarting ? "Starting..." : actionLabel}
+        {isStarting ? busyLabel : actionLabel}
       </Button>
     </div>
   )

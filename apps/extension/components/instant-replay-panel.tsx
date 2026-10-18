@@ -17,15 +17,12 @@ interface InstantReplayPanelProps {
   disabled: boolean
 }
 
-const VIDEO_CHOICES: {
-  status: ReplayVideoStatus
-  label: string
-  icon?: typeof Video
-}[] = [
-  { status: "off", label: "No video" },
-  { status: "this-tab", label: "This tab", icon: Video },
-  { status: "screen", label: "Full screen", icon: Monitor },
-]
+const VIDEO_STATUS_TEXT: Record<ReplayVideoStatus, string> = {
+  "this-tab": "Video of this tab is recording in the background.",
+  screen: "Video of your screen is recording in the background.",
+  "other-tab": "The video is of another tab; here you get the page replay.",
+  off: "No video, only the page replay. Add a video:",
+}
 
 /** Turns instant replay on and off, and saves the last minutes of the tab. */
 export function InstantReplayPanel({
@@ -34,8 +31,8 @@ export function InstantReplayPanel({
   disabled,
 }: InstantReplayPanelProps) {
   return (
-    <div className="space-y-2 rounded-lg border bg-card p-2.5 shadow-xs">
-      <div className="flex items-center gap-2.5">
+    <div className="space-y-2.5 rounded-lg border bg-card p-2.5 shadow-xs">
+      <div className="flex items-center gap-2">
         <span
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]",
@@ -48,12 +45,12 @@ export function InstantReplayPanel({
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-[13px]">
-            {replay.isEnabled ? `On · last ${WINDOW_MINUTES} minutes` : "Off"}
+            {replay.isEnabled ? "Instant replay is on" : "Instant replay"}
           </p>
-          <p className="text-[11px] text-muted-foreground leading-snug">
+          <p className="truncate text-[11.5px] text-muted-foreground">
             {replay.isEnabled
-              ? "With console and network. Nothing is uploaded until you send a report."
-              : `Keeps the last ${WINDOW_MINUTES} minutes, so you can report a bug after it happens.`}
+              ? `Keeps the last ${WINDOW_MINUTES} min; nothing uploads until you share`
+              : `Report a bug after it happens: keeps the last ${WINDOW_MINUTES} min`}
           </p>
         </div>
         {replay.isEnabled ? (
@@ -78,7 +75,7 @@ export function InstantReplayPanel({
         )}
       </div>
 
-      {replay.isEnabled ? <VideoChoice replay={replay} /> : null}
+      {replay.isEnabled ? <VideoRow replay={replay} /> : null}
 
       {replay.error ? (
         <p
@@ -92,9 +89,10 @@ export function InstantReplayPanel({
 
       {replay.isEnabled ? (
         <Button
-          className={cn("h-8 w-full justify-between", BRAND_BUTTON_CLASS)}
+          className={cn("w-full justify-between", BRAND_BUTTON_CLASS)}
           disabled={disabled || replay.isSaving}
           onClick={replay.save}
+          size="sm"
         >
           {replay.isSaving
             ? "Opening the replay..."
@@ -109,55 +107,58 @@ export function InstantReplayPanel({
   )
 }
 
-// Whether the replay also keeps a video, and of what.
-function VideoChoice({ replay }: { replay: InstantReplayControls }) {
-  const isBusy = replay.isStartingVideo || replay.isSaving
+function VideoRow({ replay }: { replay: InstantReplayControls }) {
   const isRecording =
     replay.videoStatus === "this-tab" || replay.videoStatus === "screen"
-
-  const choose = (status: ReplayVideoStatus) => {
-    if (status === "off") {
-      if (isRecording) replay.stopVideo()
-      return
-    }
-    replay.startVideo(status === "screen" ? "display" : "tab")
-  }
+  const isBusy = replay.isStartingVideo || replay.isSaving
 
   return (
-    <div className="space-y-1.5">
-      <div className="grid grid-cols-3 rounded-md bg-muted p-0.5">
-        {VIDEO_CHOICES.map(({ status, label, icon: Icon }) => {
-          const isOn = replay.videoStatus === status
-          return (
-            <button
-              aria-pressed={isOn}
-              className={cn(
-                "flex h-[26px] items-center justify-center gap-1.5 rounded-[5px] text-[11.5px] text-muted-foreground transition-colors",
-                "hover:text-foreground disabled:pointer-events-none disabled:opacity-60",
-                isOn &&
-                  "bg-background font-semibold text-foreground shadow-xs ring-1 ring-border"
-              )}
-              disabled={isBusy || isOn}
-              key={status}
-              onClick={() => choose(status)}
-              type="button"
-            >
-              {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
-              {label}
-              {isOn && status !== "off" ? (
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-500" />
-              ) : null}
-            </button>
-          )
-        })}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md bg-muted px-2.5 py-2">
+      <p className="flex flex-1 items-center gap-2 text-xs">
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            isRecording ? "animate-pulse bg-rose-500" : "bg-zinc-400"
+          )}
+        />
+        {replay.isStartingVideo
+          ? "Starting the video..."
+          : VIDEO_STATUS_TEXT[replay.videoStatus]}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {replay.videoStatus === "this-tab" ? null : (
+          <Button
+            disabled={isBusy}
+            onClick={() => replay.startVideo("tab")}
+            size="xs"
+            variant="outline"
+          >
+            <Video className="h-3.5 w-3.5" />
+            {replay.videoStatus === "off" ? "This tab" : "Record this tab"}
+          </Button>
+        )}
+        {replay.videoStatus === "screen" ? null : (
+          <Button
+            disabled={isBusy}
+            onClick={() => replay.startVideo("display")}
+            size="xs"
+            variant="outline"
+          >
+            <Monitor className="h-3.5 w-3.5" />
+            Whole screen
+          </Button>
+        )}
+        {isRecording ? (
+          <Button
+            disabled={isBusy}
+            onClick={replay.stopVideo}
+            size="xs"
+            variant="ghost"
+          >
+            Stop video
+          </Button>
+        ) : null}
       </div>
-      {replay.isStartingVideo || replay.videoStatus === "other-tab" ? (
-        <p className="text-[11px] text-muted-foreground">
-          {replay.isStartingVideo
-            ? "Starting the video..."
-            : "The video is of another tab; here you get the page replay."}
-        </p>
-      ) : null}
     </div>
   )
 }

@@ -1,3 +1,8 @@
+import { createWriteStream } from "node:fs"
+import { writeFile } from "node:fs/promises"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
+import type { ReadableStream as NodeReadableStream } from "node:stream/web"
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -30,6 +35,8 @@ export interface StorageProvider {
   // Bytes stored, or null when there is no such object.
   size(filename: string): Promise<number | null>
   read(filename: string): Promise<Buffer>
+  // Streams the object to a local file without holding it in memory.
+  readToFile(filename: string, destinationPath: string): Promise<void>
   remove(filename: string): Promise<void>
 }
 
@@ -194,6 +201,15 @@ export function createS3StorageProvider(
         })
       )
       return await readBodyToBuffer(response.Body)
+    },
+    async readToFile(filename: string, destinationPath: string): Promise<void> {
+      const response = await client.send(
+        new GetObjectCommand({
+          Bucket: options.bucket,
+          Key: filename,
+        })
+      )
+      await writeBodyToFile(response.Body, destinationPath)
     },
     async remove(filename: string): Promise<void> {
       try {
@@ -506,6 +522,26 @@ async function normalizeUploadBody(data: Blob | Buffer): Promise<Buffer> {
 
   const arrayBuffer = await data.arrayBuffer()
   return Buffer.from(arrayBuffer)
+}
+
+async function writeBodyToFile(
+  body: unknown,
+  destinationPath: string
+): Promise<void> {
+  if (body instanceof Readable) {
+    await pipeline(body, createWriteStream(destinationPath))
+    return
+  }
+
+  if (body instanceof ReadableStream) {
+    await pipeline(
+      Readable.fromWeb(body as unknown as NodeReadableStream),
+      createWriteStream(destinationPath)
+    )
+    return
+  }
+
+  await writeFile(destinationPath, await readBodyToBuffer(body))
 }
 
 async function readBodyToBuffer(body: unknown): Promise<Buffer> {

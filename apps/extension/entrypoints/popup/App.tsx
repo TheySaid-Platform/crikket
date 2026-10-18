@@ -1,13 +1,15 @@
 import { AlertCircle } from "lucide-react"
 import { InstantReplayPanel } from "@/components/instant-replay-panel"
+import { MicrophoneProblemCard } from "@/components/microphone-problem-card"
 import { PopupCaptureActions } from "@/components/popup-capture-actions"
-import { PopupFooter, PopupHeader } from "@/components/popup-header"
+import { PopupHeader } from "@/components/popup-header"
 import { UnsentReportCard } from "@/components/unsent-report-card"
 import { useBackgroundRecordingStatus } from "@/hooks/use-background-recording-status"
 import { useCommandShortcuts } from "@/hooks/use-command-shortcuts"
 import { useFullPageProgress } from "@/hooks/use-full-page-progress"
 import { useHotkeyTrigger } from "@/hooks/use-hotkey-trigger"
 import { useInstantReplay } from "@/hooks/use-instant-replay"
+import { useMicrophoneProblem } from "@/hooks/use-microphone-problem"
 import { usePopupCapture } from "@/hooks/use-popup-capture"
 import { usePopupMicToggle } from "@/hooks/use-popup-mic-toggle"
 import { usePopupRecordingStatus } from "@/hooks/use-popup-recording-status"
@@ -47,6 +49,7 @@ function App() {
   const { pendingReview, recordingError, reopenReview } = useUnfinishedCapture()
   const fullPageProgress = useFullPageProgress()
   const instantReplay = useInstantReplay()
+  const { microphoneProblem, fixMicrophone } = useMicrophoneProblem()
   // "Record This Tab" records in the background, without a recorder tab.
   const { backgroundRecording, backgroundRecordedMs } =
     useBackgroundRecordingStatus()
@@ -79,7 +82,7 @@ function App() {
   })
 
   return (
-    <div className="w-[360px] space-y-2.5 bg-muted/70 p-3">
+    <div className="w-[480px] space-y-2.5 bg-muted/70 p-3">
       <PopupHeader />
 
       {error ? (
@@ -90,6 +93,13 @@ function App() {
           <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
           <p className="font-medium text-xs leading-relaxed">{error}</p>
         </div>
+      ) : null}
+
+      {microphoneProblem && !isRecording ? (
+        <MicrophoneProblemCard
+          onFix={fixMicrophone}
+          problem={microphoneProblem}
+        />
       ) : null}
 
       {showUnsentReport ? <UnsentReportCard onOpen={reopenReview} /> : null}
@@ -137,8 +147,6 @@ function App() {
         stopRecordingShortcut={shortcuts.stopRecording}
         togglePauseShortcut={shortcuts.togglePause}
       />
-
-      <PopupFooter />
     </div>
   )
 }

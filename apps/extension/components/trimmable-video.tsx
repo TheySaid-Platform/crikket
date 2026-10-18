@@ -38,8 +38,9 @@ interface TrimmableVideoProps {
   onTrimChange: (trim: TrimRange) => void
 }
 
+// Rounded down like the times beside it; a clip is at least half a second.
 function formatKeptDuration(ms: number): string {
-  const seconds = Math.round(ms / 1000)
+  const seconds = Math.max(1, Math.floor(ms / 1000))
   if (seconds < 60) {
     return seconds === 1 ? "1 second" : `${seconds} seconds`
   }

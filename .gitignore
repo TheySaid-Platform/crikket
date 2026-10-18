@@ -53,6 +53,7 @@ storage
 local/
 backups/
 .worktrees/
+.worktree/
 .serena/
 
 .agents/
