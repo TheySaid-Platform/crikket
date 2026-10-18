@@ -43,24 +43,14 @@ export function CapturePreview({
     const drawings = videoEdits?.drawings ?? []
     const editCount = blurRegions.length + drawings.length
     return (
-      <div className="space-y-3">
-        <TrimmableVideo
-          blurRegions={blurRegions}
-          disabled={disabled}
-          drawings={drawings}
-          durationMs={durationMs ?? 0}
-          onTrimChange={onTrimChange}
-          src={previewUrl}
-          trim={
-            videoEdits
-              ? { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs }
-              : null
-          }
-        />
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-muted-foreground text-sm">
-            Drag the green handles to keep only the part that shows the bug.
-          </p>
+      <TrimmableVideo
+        blurRegions={blurRegions}
+        disabled={disabled}
+        drawings={drawings}
+        durationMs={durationMs ?? 0}
+        onTrimChange={onTrimChange}
+        src={previewUrl}
+        trailing={
           <Button
             disabled={disabled}
             onClick={onEdit}
@@ -71,15 +61,20 @@ export function CapturePreview({
             <PenLine className="h-4 w-4" />
             {editCount > 0 ? `Draw & blur (${editCount})` : "Draw & blur"}
           </Button>
-        </div>
-      </div>
+        }
+        trim={
+          videoEdits
+            ? { startMs: videoEdits.trimStartMs, endMs: videoEdits.trimEndMs }
+            : null
+        }
+      />
     )
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-muted-foreground text-sm">
+        <p className="text-[13px] text-muted-foreground">
           {getScreenshotHint(isScreenshotEdited, fullPage !== null)}
         </p>
         <Button
@@ -101,7 +96,7 @@ export function CapturePreview({
         <>
           {/* Shown at full width and scrollable: shrunk to fit, a long page
               is a thin strip nobody can read. */}
-          <div className="max-h-[min(70vh,720px)] overflow-y-auto rounded-xl border bg-black shadow-sm">
+          <div className="max-h-[calc(100vh-210px)] min-h-0 flex-1 overflow-y-auto rounded-[10px] border bg-zinc-950">
             {/* The density makes the browser show it at the page's size. */}
             <img
               alt="Long screenshot preview"
@@ -114,10 +109,10 @@ export function CapturePreview({
           {isScreenshotEdited ? null : <FullPageNote fullPage={fullPage} />}
         </>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-black shadow-sm">
+        <div className="flex min-h-[240px] flex-1 items-center justify-center overflow-hidden rounded-[10px] border bg-muted/50">
           <img
             alt="Screenshot preview"
-            className="max-h-[400px] w-full bg-black object-contain"
+            className="max-h-[calc(100vh-180px)] max-w-full object-contain"
             src={previewUrl}
           />
         </div>
@@ -132,11 +127,11 @@ function getPixelRatio(fullPage: FullPageDetails): number {
 }
 
 function getScreenshotHint(isEdited: boolean, isFullPage: boolean): string {
-  if (isEdited) return "Edits applied. You can edit again before submitting."
+  if (isEdited) return "Edits applied. You can edit again before you send it."
   if (isFullPage) {
     return "Cut it to the part that matters, or draw, blur and add text."
   }
-  return "Draw, add text, blur or crop before submitting."
+  return "Draw, add text, blur or crop before you send it."
 }
 
 // Says how much of the page the full-page screenshot holds.
@@ -146,8 +141,8 @@ function FullPageNote({ fullPage }: { fullPage: FullPageDetails }) {
 
   if (fullPage.ending === "page-end") {
     return (
-      <p className="flex items-center gap-2 text-emerald-700 text-xs">
-        <CheckCircle2 className="h-4 w-4 shrink-0" />
+      <p className="flex items-center gap-2 text-muted-foreground text-xs">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
         Captured down to the end of the page ({screens} tall). Scroll the
         preview to check it.
       </p>
@@ -156,7 +151,7 @@ function FullPageNote({ fullPage }: { fullPage: FullPageDetails }) {
 
   if (fullPage.ending === "tab-changed") {
     return (
-      <p className="flex items-center gap-2 text-sky-700 text-xs">
+      <p className="flex items-center gap-2 text-muted-foreground text-xs">
         <StopCircle className="h-4 w-4 shrink-0" />
         You switched tabs, so the capture stopped after {screens}. Scroll the
         preview to check it.
@@ -166,7 +161,7 @@ function FullPageNote({ fullPage }: { fullPage: FullPageDetails }) {
 
   if (fullPage.ending === "stopped") {
     return (
-      <p className="flex items-center gap-2 text-sky-700 text-xs">
+      <p className="flex items-center gap-2 text-muted-foreground text-xs">
         <StopCircle className="h-4 w-4 shrink-0" />
         You stopped after {screens}. Scroll the preview to check it.
       </p>
@@ -174,8 +169,8 @@ function FullPageNote({ fullPage }: { fullPage: FullPageDetails }) {
   }
 
   return (
-    <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800 text-xs">
-      <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
+    <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-amber-800 text-xs leading-relaxed">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       This page is very long, so the capture stopped after {screens}. Scroll the
       preview to see where it ends.
     </p>

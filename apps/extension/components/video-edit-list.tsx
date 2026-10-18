@@ -43,10 +43,9 @@ export function VideoEditList({
 }: VideoEditListProps) {
   if (drawings.length === 0 && blurRegions.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed p-4 text-center text-muted-foreground text-sm">
-        Move to the moment that shows the bug, then draw on the video. Each
-        drawing shows for 3 seconds; you can change that here afterwards. Blur
-        hides an area for the whole clip.
+      <p className="text-muted-foreground text-xs">
+        Each drawing shows for 3 seconds; you can change that here afterwards.
+        Blur hides an area for the whole clip.
       </p>
     )
   }
@@ -54,7 +53,7 @@ export function VideoEditList({
   const clipTime = (ms: number) => formatDuration(Math.max(0, ms - clipStartMs))
 
   return (
-    <ul className="divide-y overflow-hidden rounded-xl border">
+    <ul className="divide-y overflow-hidden rounded-lg border">
       {drawings.map((drawing) => {
         const Icon = getToolIcon(drawing.annotation.kind)
         const color =

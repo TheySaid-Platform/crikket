@@ -12,30 +12,22 @@ const openTab = async (url: string, errorMessage: string) => {
 }
 
 const HEADER_BUTTON_CLASS =
-  "inline-flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 font-medium text-[11px] text-white/90 ring-1 ring-white/10 transition-colors hover:bg-white/20 hover:text-white"
+  "inline-flex h-[26px] items-center gap-1 rounded-md bg-white/8 px-2 font-medium text-[11.5px] text-white/90 ring-1 ring-white/10 transition-colors hover:bg-white/15 hover:text-white"
 
 export function PopupHeader() {
   return (
-    <header className="relative overflow-hidden rounded-2xl bg-zinc-950 px-3.5 py-2.5 text-white shadow-lg shadow-zinc-950/20">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full bg-blue-500/40 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-20 left-4 h-36 w-36 rounded-full bg-violet-500/30 blur-3xl"
-      />
-      <div className="relative flex items-center gap-3">
+    <header className="rounded-lg bg-slate-900 py-2 pr-2 pl-2 text-white">
+      <div className="flex items-center gap-2.5">
         <img
           alt=""
-          className="h-8 w-8 rounded-lg shadow-md ring-1 ring-white/15"
+          className="h-8 w-8 rounded-[9px] ring-1 ring-white/15"
           height={32}
           src="/icon/128.png"
           width={32}
         />
-        <h1 className="min-w-0 flex-1 font-semibold text-[15px] leading-tight tracking-tight">
+        <h1 className="min-w-0 flex-1 font-semibold text-sm leading-tight tracking-tight">
           Crikket
-          <span className="ml-2 font-medium text-[10px] text-white/50 tabular-nums">
+          <span className="ml-2 font-mono font-normal text-[10px] text-white/50 tabular-nums">
             v{chrome.runtime.getManifest().version}
           </span>
         </h1>

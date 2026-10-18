@@ -25,16 +25,18 @@ export function StartPrompt({
   const [isStarting, setIsStarting] = useState(false)
 
   return (
-    <div className="flex flex-col items-center justify-center gap-5 py-10 text-center">
-      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-blue-600 to-violet-600 text-white shadow-blue-600/25 shadow-lg ring-8 ring-blue-500/10">
-        <Icon className="h-7 w-7" />
+    <div className="flex flex-col items-center justify-center gap-4 px-6 py-14 text-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-foreground">
+        <Icon className="h-5 w-5" />
       </span>
       <div className="max-w-md space-y-1.5">
-        <h2 className="font-semibold text-xl tracking-tight">{title}</h2>
-        <p className="text-muted-foreground text-sm">{description}</p>
+        <h2 className="font-semibold text-lg tracking-tight">{title}</h2>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          {description}
+        </p>
       </div>
       <Button
-        className={`min-w-[220px] ${BRAND_BUTTON_CLASS}`}
+        className={`mt-1 h-10 min-w-[200px] ${BRAND_BUTTON_CLASS}`}
         disabled={isStarting}
         onClick={async () => {
           setIsStarting(true)
@@ -44,7 +46,6 @@ export function StartPrompt({
             setIsStarting(false)
           }
         }}
-        size="lg"
       >
         {isStarting ? busyLabel : actionLabel}
       </Button>

@@ -116,11 +116,13 @@ export function FormStep({
     meta.isTouched && meta.errors.length > 0
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
-      <div className="min-w-0">{preview}</div>
+    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col p-5 lg:min-h-0 lg:px-6">
+        {preview}
+      </div>
 
       <form
-        className="flex flex-col gap-5 rounded-2xl border border-border/60 bg-slate-50/80 p-4 lg:p-5"
+        className="flex flex-col gap-4 border-t p-5 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:px-6"
         onSubmit={(event) => {
           event.preventDefault()
           event.stopPropagation()
@@ -135,7 +137,7 @@ export function FormStep({
                 <FieldLabel htmlFor={field.name}>Title</FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
-                  className="h-10"
+                  className="h-9"
                   id={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
@@ -155,18 +157,18 @@ export function FormStep({
               <Field data-invalid={isInvalid}>
                 <FieldLabel htmlFor={field.name}>
                   Description
-                  <span className="font-normal text-muted-foreground">
-                    (optional)
+                  <span className="font-normal text-muted-foreground/70">
+                    optional
                   </span>
                 </FieldLabel>
                 <Textarea
                   aria-invalid={isInvalid}
-                  className="min-h-28 resize-none"
+                  className="min-h-[88px] resize-none"
                   id={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
                   placeholder="Steps, what you expected, anything that helps..."
-                  rows={5}
+                  rows={4}
                   value={field.state.value}
                 />
                 {isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -191,7 +193,7 @@ export function FormStep({
                 >
                   <SelectTrigger
                     aria-invalid={isInvalid}
-                    className="h-10 w-full"
+                    className="h-9 w-full"
                     id={field.name}
                   >
                     <SelectValue className="capitalize" />
@@ -213,33 +215,31 @@ export function FormStep({
         <CapturedDataSummary summary={debuggerSummary} />
 
         {preSubmitWarnings.length > 0 ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-            <p className="flex items-center gap-2 font-medium text-amber-800 text-sm">
-              <AlertTriangle className="h-4 w-4" />
-              Before you submit
-            </p>
-            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-amber-800 text-xs">
+          <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-amber-800 text-xs leading-relaxed">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div className="space-y-1">
               {preSubmitWarnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+                <p key={warning}>{warning}</p>
               ))}
-            </ul>
+            </div>
           </div>
         ) : null}
 
         {submitError ? (
           <div
-            className="rounded-xl border border-destructive/30 bg-destructive/10 p-3"
+            className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2"
             role="alert"
           >
-            <p className="text-destructive text-sm">{submitError}</p>
+            <p className="text-red-800 text-xs leading-relaxed">
+              {submitError}
+            </p>
           </div>
         ) : null}
 
-        <div className="relative mt-auto flex flex-col gap-2 pt-1">
+        <div className="relative flex flex-col gap-1 pt-1">
           <Button
-            className={cn("w-full", BRAND_BUTTON_CLASS)}
+            className={cn("h-10 w-full", BRAND_BUTTON_CLASS)}
             disabled={isBusy}
-            size="lg"
             type="submit"
           >
             {isBusy ? "Creating report..." : "Create bug report"}
@@ -272,54 +272,36 @@ export function FormStep({
 
 const CAPTURED_DATA_STATS: {
   key: keyof DebuggerSummary
-  label: string
+  one: string
+  many: string
   icon: typeof Terminal
-  tone: string
 }[] = [
-  {
-    key: "actions",
-    label: "Actions",
-    icon: MousePointerClick,
-    tone: "bg-violet-100 text-violet-600",
-  },
-  {
-    key: "logs",
-    label: "Logs",
-    icon: Terminal,
-    tone: "bg-amber-100 text-amber-600",
-  },
-  {
-    key: "networkRequests",
-    label: "Requests",
-    icon: Globe,
-    tone: "bg-sky-100 text-sky-600",
-  },
+  { key: "actions", one: "action", many: "actions", icon: MousePointerClick },
+  { key: "logs", one: "log", many: "logs", icon: Terminal },
+  { key: "networkRequests", one: "request", many: "requests", icon: Globe },
 ]
 
 // What the report carries besides the capture: steps, console and network.
+// Only what was captured; the warning says what is missing.
 function CapturedDataSummary({ summary }: { summary: DebuggerSummary }) {
+  const captured = CAPTURED_DATA_STATS.filter(({ key }) => summary[key] > 0)
+  if (captured.length === 0) return null
+
   return (
-    <div className="rounded-xl border border-border/60 bg-background p-3 shadow-xs">
-      <p className="mb-2 font-medium text-muted-foreground text-xs">
-        Attached to this report
-      </p>
-      <div className="grid grid-cols-3 gap-2">
-        {CAPTURED_DATA_STATS.map(({ key, label, icon: Icon, tone }) => (
-          <div
-            className="flex flex-col items-center gap-1 px-2 py-1 text-center"
+    <div className="space-y-2">
+      <p className="font-medium text-sm">Attached</p>
+      <div className="flex flex-wrap gap-1.5">
+        {captured.map(({ key, one, many, icon: Icon }) => (
+          <span
+            className="inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] text-muted-foreground"
             key={key}
           >
-            <span
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-lg",
-                tone
-              )}
-            >
-              <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
+            <span className="font-semibold text-foreground tabular-nums">
+              {summary[key]}
             </span>
-            <p className="font-semibold text-sm tabular-nums">{summary[key]}</p>
-            <p className="text-[11px] text-muted-foreground">{label}</p>
-          </div>
+            {summary[key] === 1 ? one : many}
+          </span>
         ))}
       </div>
     </div>

@@ -14,10 +14,12 @@ const TIMER_INTERVAL_MS = 250
 const SPEECH_LEVEL = 0.32
 const SPEECH_MIN_MS = 350
 
+// Static markup, so innerHTML is safe; the hint fades once read.
 const MODE_HINTS: Record<Exclude<BarMode, "none">, string> = {
-  draw: "Draw on the page with the tools above the bar. Drawings fade after a few seconds. Press Esc when done.",
-  blur: "Click anything private to blur it, click again to unblur. Press Esc when done.",
+  draw: "Drawings fade after a few seconds · <kbd>Esc</kbd> to finish",
+  blur: "Click anything private to blur it, again to unblur · <kbd>Esc</kbd> to finish",
 }
+const HINT_SHOWN_MS = 3000
 
 // A constructed stylesheet is not subject to the page's Content Security
 // Policy, unlike a <style> element (the fallback for older engines).
@@ -115,13 +117,26 @@ export function createRecordingUi(commands: RecordingCommands): RecordingUi {
     })
   }
 
+  let hintTimer: number | undefined
+  const showHint = (next: BarMode) => {
+    window.clearTimeout(hintTimer)
+    hint.classList.remove("faded")
+    hint.hidden = next === "none"
+    hint.innerHTML = next === "none" ? "" : MODE_HINTS[next]
+    if (next !== "none") {
+      hintTimer = window.setTimeout(
+        () => hint.classList.add("faded"),
+        HINT_SHOWN_MS
+      )
+    }
+  }
+
   // Picking the active tool again turns it off.
   const toggleMode = (next: Exclude<BarMode, "none">) => {
     mode = mode === next ? "none" : next
     drawLayer.setActive(mode === "draw")
     blurPicker.setActive(mode === "blur")
-    hint.hidden = mode === "none"
-    hint.textContent = mode === "none" ? "" : MODE_HINTS[mode]
+    showHint(mode)
     render()
   }
 
@@ -171,6 +186,7 @@ export function createRecordingUi(commands: RecordingCommands): RecordingUi {
     setMicLevel,
     destroy: () => {
       window.clearInterval(timer)
+      window.clearTimeout(hintTimer)
       window.removeEventListener("keydown", onKeyDown, true)
       blurPicker.clearAll()
       blurPicker.destroy()

@@ -51,6 +51,8 @@ const TOOL_HINTS: Partial<Record<AnnotationTool, string>> = {
 }
 const DEFAULT_HINT =
   "Drag on the screenshot to draw. Tip: each tool has a letter shortcut."
+const CUT_HINT =
+  "Drag the blue handles on the right to keep only part of the page. "
 
 // A long screenshot scrolls in a fixed-height view with the cut strip beside
 // it. A capture of a wide panel can be long without being tall.
@@ -171,6 +173,7 @@ export function ScreenshotEditor({
 
   const hasEdits = annotations.length > 0 || crop !== null
   const isTall = isTallImage(image, isLongScreenshot)
+  const hint = `${isTall ? CUT_HINT : ""}${TOOL_HINTS[tool] ?? DEFAULT_HINT}`
 
   const handleApply = async () => {
     if (!image) return
@@ -198,7 +201,7 @@ export function ScreenshotEditor({
       : 16
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-5 lg:px-6">
       <AnnotationToolbar
         canRedo={edits.canRedo}
         canUndo={edits.canUndo}
@@ -226,11 +229,16 @@ export function ScreenshotEditor({
       {/* A long screenshot gets a fixed height: the preview scrolls inside it
           and the cut strip beside it is exactly as tall, so both handles and
           the preview stay in view together. */}
-      <div className={cn("flex gap-3", isTall && "h-[60vh]")}>
+      <div
+        className={cn(
+          "flex gap-3",
+          isTall ? "h-[calc(100vh-200px)] min-h-[320px]" : "min-h-0 flex-1"
+        )}
+      >
         <div
           className={cn(
-            "flex min-w-0 flex-1 justify-center rounded-2xl bg-[length:16px_16px] bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-zinc-950 p-3 ring-1 ring-border",
-            isTall ? "h-full overflow-y-auto" : "overflow-hidden"
+            "flex min-w-0 flex-1 justify-center rounded-[10px] border bg-muted p-4",
+            isTall ? "h-full overflow-y-auto" : "items-center overflow-hidden"
           )}
           ref={stageRef}
         >
@@ -242,8 +250,10 @@ export function ScreenshotEditor({
           >
             <canvas
               className={cn(
-                "block cursor-crosshair touch-none rounded-md shadow-2xl",
-                isTall ? "h-auto max-w-full" : "max-h-[480px] max-w-full"
+                "block cursor-crosshair touch-none shadow-md",
+                isTall
+                  ? "h-auto max-w-full"
+                  : "max-h-[calc(100vh-240px)] max-w-full"
               )}
               ref={canvasRef}
               style={getCanvasStyle(isTall, image, pixelRatio)}
@@ -283,16 +293,9 @@ export function ScreenshotEditor({
         ) : null}
       </div>
 
-      <p className="text-muted-foreground text-xs">
-        {isTall
-          ? "Drag the green handles on the right to keep only part of the page. "
-          : null}
-        {TOOL_HINTS[tool] ?? DEFAULT_HINT}
-      </p>
-
       {error ? (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-          <p className="text-red-500 text-sm">{error}</p>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+          <p className="text-red-800 text-sm">{error}</p>
         </div>
       ) : null}
 
@@ -300,6 +303,7 @@ export function ScreenshotEditor({
         applyDisabled={!image}
         applyLabel="Apply edits"
         canClear={hasEdits}
+        hint={hint}
         isBusy={isSaving}
         onApply={handleApply}
         onCancel={onCancel}

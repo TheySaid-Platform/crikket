@@ -74,12 +74,12 @@ export function PageCutStrip({
     }
 
   return (
-    <div className="flex h-full w-[92px] shrink-0 flex-col gap-2">
+    <div className="flex h-full w-[96px] shrink-0 flex-col gap-2">
       <p className="text-center font-medium text-[11px] text-muted-foreground leading-tight">
         Keep this part
       </p>
       <div className="relative min-h-0 flex-1 py-2" ref={stripRef}>
-        <div className="relative h-full overflow-hidden rounded-md bg-zinc-950 ring-1 ring-border">
+        <div className="relative h-full overflow-hidden rounded-md bg-muted ring-1 ring-border">
           <img
             alt=""
             className="block h-full w-full object-fill"
@@ -87,15 +87,15 @@ export function PageCutStrip({
             src={imageUrl}
           />
           <div
-            className="absolute inset-x-0 top-0 bg-black/65"
+            className="absolute inset-x-0 top-0 bg-white/70"
             style={{ height: `${range.top * 100}%` }}
           />
           <div
-            className="absolute inset-x-0 bottom-0 bg-black/65"
+            className="absolute inset-x-0 bottom-0 bg-white/70"
             style={{ height: `${(1 - range.bottom) * 100}%` }}
           />
           <div
-            className="pointer-events-none absolute inset-x-0 border-2 border-emerald-400"
+            className="pointer-events-none absolute inset-x-0 rounded-md border-2 border-primary"
             style={{
               top: `${range.top * 100}%`,
               bottom: `${(1 - range.bottom) * 100}%`,
@@ -107,7 +107,7 @@ export function PageCutStrip({
             aria-label={
               side === "top" ? "Cut from the top" : "Cut from the bottom"
             }
-            className="absolute inset-x-0 flex h-4 -translate-y-1/2 cursor-ns-resize touch-none items-center justify-center rounded-md bg-emerald-400 text-emerald-950 shadow-sm focus-visible:outline-2 focus-visible:outline-emerald-600"
+            className="absolute inset-x-3 flex h-3.5 -translate-y-1/2 cursor-ns-resize touch-none items-center justify-center rounded-[5px] bg-primary text-primary-foreground shadow-sm focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1"
             key={side}
             onKeyDown={nudge(side)}
             onPointerDown={startDrag(side)}

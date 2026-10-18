@@ -1,5 +1,5 @@
 import { Button } from "@crikket/ui/components/ui/button"
-import { Check, Copy, ExternalLink } from "lucide-react"
+import { AlertTriangle, Check, Copy, ExternalLink } from "lucide-react"
 import { useState } from "react"
 import { BRAND_BUTTON_CLASS } from "@/lib/brand"
 
@@ -18,16 +18,13 @@ export function SuccessStep({
 }: SuccessStepProps) {
   const [isCopied, setIsCopied] = useState(false)
   return (
-    <div className="flex flex-col items-center justify-center gap-6 py-8">
-      <div className="relative flex h-20 w-20 items-center justify-center">
-        <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/30 [animation-iteration-count:2]" />
-        <span className="relative flex h-20 w-20 items-center justify-center rounded-full bg-linear-to-br from-emerald-400 to-teal-500 text-white shadow-emerald-500/30 shadow-lg ring-8 ring-emerald-500/10">
-          <Check className="h-10 w-10" strokeWidth={3} />
-        </span>
-      </div>
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-12">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600">
+        <Check className="h-[22px] w-[22px]" strokeWidth={2.5} />
+      </span>
 
       <div className="space-y-1 text-center">
-        <h2 className="font-semibold text-2xl tracking-tight">
+        <h2 className="font-semibold text-lg tracking-tight">
           Bug report created
         </h2>
         <p className="text-muted-foreground text-sm">
@@ -36,35 +33,32 @@ export function SuccessStep({
       </div>
 
       {warnings.length > 0 ? (
-        <div className="w-full max-w-md rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-left">
-          <p className="font-medium text-amber-700 text-sm">
-            Submitted with warnings
-          </p>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700 text-xs">
+        <div className="flex w-full max-w-md gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-amber-800 text-xs leading-relaxed">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-medium">Sent with a warning</p>
             {warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
+              <p key={warning}>{warning}</p>
             ))}
-          </ul>
+          </div>
         </div>
       ) : null}
 
-      <div className="grid w-full max-w-md grid-cols-2 gap-3">
+      <div className="mt-1 grid w-full max-w-sm grid-cols-2 gap-2">
         <Button
-          className={`w-full ${BRAND_BUTTON_CLASS}`}
+          className={`h-10 w-full ${BRAND_BUTTON_CLASS}`}
           onClick={onOpenRecording}
-          size="lg"
         >
           <ExternalLink className="h-4 w-4" />
           Open report
         </Button>
         <Button
-          className="w-full"
+          className="h-10 w-full"
           onClick={() => {
             onCopyLink()
             setIsCopied(true)
             setTimeout(() => setIsCopied(false), 2000)
           }}
-          size="lg"
           variant="outline"
         >
           {isCopied ? (

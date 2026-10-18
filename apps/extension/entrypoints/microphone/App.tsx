@@ -1,6 +1,7 @@
 import { reportNonFatalError } from "@crikket/shared/lib/errors"
 import { Mic } from "lucide-react"
 import { useEffect, useRef } from "react"
+import { ReviewShell } from "@/components/review-shell"
 import { StartPrompt } from "@/components/start-prompt"
 import {
   isMicrophonePermissionUndecided,
@@ -44,7 +45,12 @@ function App() {
   }, [])
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-linear-to-b from-slate-100 to-background p-6">
+    <ReviewShell
+      closeButton={null}
+      isOverPage={false}
+      size="narrow"
+      title="Crikket setup"
+    >
       <StartPrompt
         actionLabel="Allow microphone"
         busyLabel="Waiting for Chrome..."
@@ -53,7 +59,7 @@ function App() {
         onStart={askForMicrophone}
         title="Allow your microphone"
       />
-    </main>
+    </ReviewShell>
   )
 }
 

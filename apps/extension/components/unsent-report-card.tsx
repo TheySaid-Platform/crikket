@@ -1,16 +1,19 @@
-import { Button } from "@crikket/ui/components/ui/button"
 import { FileWarning } from "lucide-react"
 
 export function UnsentReportCard({ onOpen }: { onOpen: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-50 p-3">
-      <p className="flex items-center gap-2 text-amber-900 text-sm">
-        <FileWarning className="h-4 w-4 shrink-0" />
+    <div className="flex h-[38px] items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 pr-1.5 pl-2.5 text-amber-800">
+      <FileWarning className="h-3.5 w-3.5 shrink-0" />
+      <p className="flex-1 font-medium text-xs">
         Your last report is not sent yet.
       </p>
-      <Button onClick={onOpen} size="sm" variant="outline">
+      <button
+        className="h-[26px] rounded-md border border-amber-200 bg-white px-2.5 font-semibold text-[11.5px] transition-colors hover:bg-amber-100"
+        onClick={onOpen}
+        type="button"
+      >
         Open it
-      </Button>
+      </button>
     </div>
   )
 }

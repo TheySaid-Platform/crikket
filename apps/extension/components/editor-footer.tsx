@@ -4,6 +4,8 @@ import { Trash2 } from "lucide-react"
 import { BRAND_BUTTON_CLASS } from "@/lib/brand"
 
 interface EditorFooterProps {
+  // A tip for the current tool, at the start of the row.
+  hint?: string
   isBusy?: boolean
   canClear: boolean
   applyLabel: string
@@ -15,6 +17,7 @@ interface EditorFooterProps {
 }
 
 export function EditorFooter({
+  hint,
   isBusy = false,
   canClear,
   applyLabel,
@@ -25,30 +28,34 @@ export function EditorFooter({
   onApply,
 }: EditorFooterProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+    <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+      <p className="min-w-0 flex-1 text-muted-foreground text-xs">{hint}</p>
       <Button
         className="text-muted-foreground"
         disabled={isBusy || !canClear}
         onClick={onClear}
+        size="sm"
         type="button"
         variant="ghost"
       >
         <Trash2 className="h-4 w-4" />
         Clear all
       </Button>
-      <div className="ml-auto flex gap-2">
+      <div className="flex gap-2">
         <Button
           disabled={isBusy}
           onClick={onCancel}
+          size="sm"
           type="button"
           variant="outline"
         >
           Cancel
         </Button>
         <Button
-          className={cn("min-w-[140px]", BRAND_BUTTON_CLASS)}
+          className={cn("min-w-[110px]", BRAND_BUTTON_CLASS)}
           disabled={isBusy || applyDisabled}
           onClick={onApply}
+          size="sm"
           type="button"
         >
           {isBusy ? busyLabel : applyLabel}

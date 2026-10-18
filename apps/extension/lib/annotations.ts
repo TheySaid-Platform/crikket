@@ -25,13 +25,12 @@ export type Annotation =
   | { kind: "text"; color: string; at: Point; text: string }
   | { kind: "blur"; rect: PixelRect }
 
+// Black and white keep drawings readable on light and on dark pages.
 export const ANNOTATION_COLORS = [
   "#ef4444",
-  "#f97316",
-  "#facc15",
+  "#f59e0b",
   "#22c55e",
   "#3b82f6",
-  "#a855f7",
   "#111827",
   "#ffffff",
 ]

@@ -31,23 +31,23 @@ export function InstantReplayPanel({
   disabled,
 }: InstantReplayPanelProps) {
   return (
-    <div className="space-y-2.5 rounded-2xl border border-border/60 bg-card p-3 shadow-xs">
+    <div className="space-y-2.5 rounded-lg border bg-card p-2.5 shadow-xs">
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br text-white shadow-md",
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]",
             replay.isEnabled
-              ? "from-amber-500 to-pink-500 shadow-amber-500/30"
-              : "from-zinc-400 to-zinc-500 shadow-zinc-500/20"
+              ? "bg-amber-50 text-amber-600"
+              : "bg-muted text-muted-foreground"
           )}
         >
-          <History className="h-4 w-4" />
+          <History className="h-[17px] w-[17px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-sm">
+          <p className="font-semibold text-[13px]">
             {replay.isEnabled ? "Instant replay is on" : "Instant replay"}
           </p>
-          <p className="truncate text-muted-foreground text-xs">
+          <p className="truncate text-[11.5px] text-muted-foreground">
             {replay.isEnabled
               ? `Keeps the last ${WINDOW_MINUTES} min; nothing uploads until you share`
               : `Report a bug after it happens: keeps the last ${WINDOW_MINUTES} min`}
@@ -55,6 +55,7 @@ export function InstantReplayPanel({
         </div>
         {replay.isEnabled ? (
           <Button
+            className="text-muted-foreground"
             disabled={replay.isSaving}
             onClick={() => replay.setEnabled(false)}
             size="sm"
@@ -96,7 +97,10 @@ export function InstantReplayPanel({
           {replay.isSaving
             ? "Opening the replay..."
             : `Share the last ${WINDOW_MINUTES} minutes`}
-          <ShortcutKbd className="bg-white/15 text-white" shortcut={shortcut} />
+          <ShortcutKbd
+            className="h-[18px] min-w-0 rounded-[5px] bg-white/15 px-1 font-mono text-[10px] text-white"
+            shortcut={shortcut}
+          />
         </Button>
       ) : null}
     </div>
@@ -109,7 +113,7 @@ function VideoRow({ replay }: { replay: InstantReplayControls }) {
   const isBusy = replay.isStartingVideo || replay.isSaving
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-muted/60 px-2.5 py-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md bg-muted px-2.5 py-2">
       <p className="flex flex-1 items-center gap-2 text-xs">
         <span
           className={cn(

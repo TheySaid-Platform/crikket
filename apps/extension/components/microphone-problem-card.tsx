@@ -1,4 +1,3 @@
-import { Button } from "@crikket/ui/components/ui/button"
 import { MicOff } from "lucide-react"
 import type { MicrophoneProblem } from "@/lib/microphone-permission"
 
@@ -19,14 +18,16 @@ export function MicrophoneProblemCard({
 }) {
   const { message, action } = COPY[problem]
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-50 p-3">
-      <p className="flex items-center gap-2 text-amber-900 text-sm">
-        <MicOff className="h-4 w-4 shrink-0" />
-        {message}
-      </p>
-      <Button className="shrink-0" onClick={onFix} size="sm" variant="outline">
+    <div className="flex min-h-[38px] items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 py-1.5 pr-1.5 pl-2.5 text-amber-800">
+      <MicOff className="h-3.5 w-3.5 shrink-0" />
+      <p className="flex-1 font-medium text-xs leading-snug">{message}</p>
+      <button
+        className="h-[26px] shrink-0 rounded-md border border-amber-200 bg-white px-2.5 font-semibold text-[11.5px] transition-colors hover:bg-amber-100"
+        onClick={onFix}
+        type="button"
+      >
         {action}
-      </Button>
+      </button>
     </div>
   )
 }

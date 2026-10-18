@@ -53,14 +53,14 @@ export const BAR_STYLES = `
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px;
-  border-radius: 18px;
-  background: rgba(17, 17, 21, 0.86);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  backdrop-filter: blur(14px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  color: #fafafa;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.35);
+  color: #f8fafc;
   font: 500 14px/1 "Geist Variable", Geist, Inter, ui-sans-serif, system-ui, sans-serif;
   pointer-events: auto;
   user-select: none;
@@ -81,22 +81,20 @@ export const BAR_STYLES = `
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 12px;
-  color: rgba(255, 255, 255, 0.86);
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 9px;
+  color: rgba(248, 250, 252, 0.85);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
 .button:active { transform: scale(0.92); }
 .button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 1px; }
-.button[aria-pressed="true"] {
-  background: #fff;
-  color: #111115;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-}
+.button[aria-pressed="true"] { background: #334155; color: #fff; }
+.button.stop { background: #1e293b; }
+.button.stop:hover { background: #334155; }
 .button:disabled { opacity: 0.4; cursor: not-allowed; background: none; transform: none; }
 [data-tip]:hover::after {
   content: attr(data-tip);
@@ -105,46 +103,42 @@ export const BAR_STYLES = `
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 9px;
-  border-radius: 8px;
-  background: rgba(17, 17, 21, 0.96);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.96);
   color: #fff;
-  font: 500 12px/1 system-ui, sans-serif;
+  font: 500 12px/1 "Geist Variable", Geist, system-ui, sans-serif;
   white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   z-index: 1;
 }
+/* With the palette open its tips would cover it. */
+.bar[data-mode="draw"] > [data-tip]:hover::after { display: none; }
 .stop-square {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  background: #f43f5e;
-  box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.2);
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #e11d48;
   transition: transform 0.15s ease;
 }
 .button:hover .stop-square { transform: scale(1.1); }
 .timer {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 8px;
-  font: 600 14px/1 "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  gap: 7px;
+  padding: 0 8px;
+  font: 500 13px/1 "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #f43f5e;
-  animation: dot-pulse 1.6s ease-in-out infinite;
+  background: #e11d48;
 }
-.bar.paused .dot { background: #f59e0b; animation: none; }
+.bar.paused .dot { background: #f59e0b; }
 .bar.paused .time { opacity: 0.55; }
-@keyframes dot-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55); }
-  50% { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0); }
-}
 .meter {
   display: inline-flex;
   align-items: center;
@@ -162,13 +156,13 @@ export const BAR_STYLES = `
 .meter.unavailable span { background: rgba(255, 255, 255, 0.25); }
 .divider {
   width: 1px;
-  height: 20px;
+  height: 18px;
   margin: 0 4px;
   background: rgba(255, 255, 255, 0.12);
 }
 svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -235,16 +229,30 @@ svg.filled { fill: currentColor; stroke: none; }
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 9px 14px;
-  border-radius: 12px;
-  background: rgba(17, 17, 21, 0.88);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: #fff;
-  font: 500 13px/1.4 system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  font: 500 12px/1 "Geist Variable", Geist, system-ui, sans-serif;
+  white-space: nowrap;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.hint[hidden] { display: none; }
+.hint.faded { opacity: 0; }
+.hint kbd {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  font: 500 10.5px/1 "Geist Mono Variable", ui-monospace, monospace;
 }
 ${DRAW_PALETTE_STYLES}
 `
@@ -347,6 +355,7 @@ export function createRecordingBar(actions: BarActions): RecordingBar {
   let latest: BarState | null = null
 
   const stopButton = createButton("Stop and review", actions.onStop)
+  stopButton.classList.add("stop")
   stopButton.innerHTML = '<span class="stop-square"></span>'
 
   const pauseButton = createButton("Pause", () =>
@@ -433,6 +442,7 @@ export function createRecordingBar(actions: BarActions): RecordingBar {
       if (state.micState !== "on") setMeterHeights(0)
     }
 
+    bar.dataset.mode = state.mode
     drawButton.setAttribute("aria-pressed", String(state.mode === "draw"))
     blurButton.setAttribute("aria-pressed", String(state.mode === "blur"))
     palette.update({
