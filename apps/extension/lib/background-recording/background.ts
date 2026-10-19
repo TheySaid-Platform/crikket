@@ -568,8 +568,12 @@ async function getReviewTabId(
   return (await getActiveTabId()) ?? state.tabId
 }
 
-// False when the page cannot show it (closed, or cannot be scripted).
+// False when the page cannot show it (closed, cannot be scripted, or private).
+// A review over a private page runs in private browsing, where it cannot read
+// the capture saved outside it.
 async function showReviewOverlay(tabId: number, url: string): Promise<boolean> {
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  if (!tab || tab.incognito) return false
   await ensurePageScript(tabId)
   try {
     const response = (await chrome.tabs.sendMessage(tabId, {
@@ -619,7 +623,11 @@ export async function openReview(input: {
       isOverlay: true,
     }
   } else {
+    // From a private page Chrome opens it in a normal window, so bring it up.
     const tab = await chrome.tabs.create({ url, active: true })
+    if (typeof tab.id === "number") {
+      await focusTab(tab.id).catch(() => undefined)
+    }
     pending = {
       tabId: tab.id ?? -1,
       url,
