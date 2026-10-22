@@ -48,6 +48,7 @@ import {
 import { toast } from "sonner"
 import { EditBugReportSheet } from "@/components/bug-reports/edit-bug-report-sheet"
 
+import type { BugReportsView } from "../../_hooks/use-bug-reports-view"
 import {
   formatPriorityLabel,
   formatStatusLabel,
@@ -57,6 +58,7 @@ import type { BugReportListItem } from "./types"
 
 interface BugReportCardProps {
   report: BugReportListItem
+  view: BugReportsView
   isChecked: boolean
   isMutating: boolean
   onToggleSelection: (checked: boolean) => void
@@ -68,6 +70,7 @@ interface BugReportCardProps {
 
 export function BugReportCard({
   report,
+  view,
   isChecked,
   isMutating,
   onToggleSelection,
@@ -101,105 +104,194 @@ export function BugReportCard({
     }
   }
 
+  const openLink = (
+    <Link
+      aria-label={`Open ${report.title}`}
+      className="absolute inset-0 z-10"
+      href={`/s/${report.id}`}
+    />
+  )
+
+  const selectionCheckbox = (
+    <Checkbox
+      aria-label={`Select ${report.title}`}
+      checked={isChecked}
+      onCheckedChange={(checked) => onToggleSelection(checked === true)}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+    />
+  )
+
+  const actionsMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+        render={
+          <Button
+            aria-label="Report actions"
+            className="h-8 w-8 bg-background/90 backdrop-blur-sm"
+            disabled={isMutating}
+            size="icon-sm"
+            variant="outline"
+          />
+        }
+      >
+        <MoreVertical className="h-4 w-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={handleCopyLink}>
+          <Copy className="size-4" />
+          Copy link
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!isReady}
+          onClick={() => window.open(`/s/${report.id}`, "_blank", "noopener")}
+        >
+          <ExternalLink className="size-4" />
+          Open in new tab
+        </DropdownMenuItem>
+        {isRetryable ? (
+          <DropdownMenuItem onClick={onRetryDebuggerIngestion}>
+            <RotateCcw className="size-4" />
+            Retry debugger ingest
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Privacy</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            onValueChange={(value) => {
+              if (value !== report.visibility) {
+                onUpdateReport({
+                  visibility: value as BugReportVisibility,
+                })
+              }
+            }}
+            value={report.visibility}
+          >
+            {VISIBILITY_OPTIONS.map((visibilityOption) => (
+              <DropdownMenuRadioItem
+                key={visibilityOption.value}
+                value={visibilityOption.value}
+              >
+                {visibilityOption.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setIsEditSheetOpen(true)}>
+          <Edit3 className="size-4" />
+          Edit report
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onRequestDelete} variant="destructive">
+          <Trash2 className="size-4" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  const visibilityBadge = (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-muted px-2 py-1 font-medium text-[11px]">
+      <Shield className="size-3" />
+      {isPrivate ? "Private" : "Public"}
+    </span>
+  )
+
+  const chips = (
+    <>
+      <Chip>{formatStatusLabel(report.status)}</Chip>
+      <Chip>{formatPriorityLabel(report.priority)}</Chip>
+      {report.submissionStatus !==
+      BUG_REPORT_SUBMISSION_STATUS_OPTIONS.ready ? (
+        <Chip>{formatSubmissionStatusLabel(report.submissionStatus)}</Chip>
+      ) : null}
+      {report.debuggerIngestionStatus ===
+      BUG_REPORT_DEBUGGER_INGESTION_STATUS_OPTIONS.failed ? (
+        <Chip>Debugger ingest failed</Chip>
+      ) : null}
+      {report.tags.slice(0, 2).map((tag) => (
+        <Chip key={tag}>
+          <Tag className="size-3" />
+          {tag}
+        </Chip>
+      ))}
+      {report.tags.length > 2 ? <Chip>+{report.tags.length - 2}</Chip> : null}
+    </>
+  )
+
+  const ingestionError = report.debuggerIngestionError ? (
+    <p className="line-clamp-2 text-amber-700 text-xs">
+      {report.debuggerIngestionError}
+    </p>
+  ) : null
+
+  const editSheet = (
+    <EditBugReportSheet
+      onOpenChange={setIsEditSheetOpen}
+      onUpdated={onReportUpdated}
+      open={isEditSheetOpen}
+      report={{
+        id: report.id,
+        title: report.title,
+        tags: report.tags,
+        status: report.status,
+        priority: report.priority,
+        visibility: report.visibility,
+      }}
+    />
+  )
+
+  const createdAt = new Date(report.createdAt).toLocaleString()
+  const context = report.description || report.url || "No additional context"
+
+  if (view === "list") {
+    return (
+      <Card className="group relative flex-row items-center gap-3 rounded-lg p-2 pr-3 transition-colors hover:bg-muted/50">
+        {openLink}
+        <div className="relative z-20 flex pl-1">{selectionCheckbox}</div>
+        <div className="relative hidden aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-muted sm:block">
+          <MediaPreview report={report} />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-4">
+          <div className="min-w-0 flex-1 space-y-1">
+            <h3
+              className="line-clamp-1 font-semibold text-sm leading-tight"
+              title={report.title}
+            >
+              {report.title}
+            </h3>
+            <p className="line-clamp-1 text-muted-foreground text-xs">
+              {createdAt} · {context}
+            </p>
+            {ingestionError}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+            {chips}
+            {visibilityBadge}
+          </div>
+        </div>
+        <div className="relative z-20">{actionsMenu}</div>
+        {editSheet}
+      </Card>
+    )
+  }
+
   return (
     <Card className="group relative overflow-hidden p-0 transition-all hover:-translate-y-0.5 hover:shadow-lg">
-      <Link
-        aria-label={`Open ${report.title}`}
-        className="absolute inset-0 z-10"
-        href={`/s/${report.id}`}
-      />
+      {openLink}
       <CardContent className="p-0">
         <div className="relative aspect-video overflow-hidden bg-muted">
-          <div className="absolute top-2 left-2 z-20">
-            <Checkbox
-              aria-label={`Select ${report.title}`}
-              checked={isChecked}
-              onCheckedChange={(checked) => onToggleSelection(checked === true)}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-            />
-          </div>
+          <div className="absolute top-2 left-2 z-20">{selectionCheckbox}</div>
 
-          <div className="absolute top-2 right-2 z-20">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                onClick={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-                render={
-                  <Button
-                    aria-label="Report actions"
-                    className="h-8 w-8 bg-background/90 backdrop-blur-sm"
-                    disabled={isMutating}
-                    size="icon-sm"
-                    variant="outline"
-                  />
-                }
-              >
-                <MoreVertical className="h-4 w-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onClick={handleCopyLink}>
-                  <Copy className="size-4" />
-                  Copy link
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!isReady}
-                  onClick={() =>
-                    window.open(`/s/${report.id}`, "_blank", "noopener")
-                  }
-                >
-                  <ExternalLink className="size-4" />
-                  Open in new tab
-                </DropdownMenuItem>
-                {isRetryable ? (
-                  <DropdownMenuItem onClick={onRetryDebuggerIngestion}>
-                    <RotateCcw className="size-4" />
-                    Retry debugger ingest
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Privacy</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    onValueChange={(value) => {
-                      if (value !== report.visibility) {
-                        onUpdateReport({
-                          visibility: value as BugReportVisibility,
-                        })
-                      }
-                    }}
-                    value={report.visibility}
-                  >
-                    {VISIBILITY_OPTIONS.map((visibilityOption) => (
-                      <DropdownMenuRadioItem
-                        key={visibilityOption.value}
-                        value={visibilityOption.value}
-                      >
-                        {visibilityOption.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setIsEditSheetOpen(true)}>
-                  <Edit3 className="size-4" />
-                  Edit report
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={onRequestDelete}
-                  variant="destructive"
-                >
-                  <Trash2 className="size-4" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <div className="absolute top-2 right-2 z-20">{actionsMenu}</div>
 
           <MediaPreview report={report} />
 
@@ -225,64 +317,21 @@ export function BugReportCard({
               >
                 {report.title}
               </h3>
-              <p className="text-muted-foreground text-xs">
-                {new Date(report.createdAt).toLocaleString()}
-              </p>
+              <p className="text-muted-foreground text-xs">{createdAt}</p>
             </div>
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-muted px-2 py-1 font-medium text-[11px]">
-              <Shield className="size-3" />
-              {isPrivate ? "Private" : "Public"}
-            </span>
+            {visibilityBadge}
           </div>
 
           <p className="line-clamp-2 min-h-8 text-muted-foreground text-xs">
-            {report.description || report.url || "No additional context"}
+            {context}
           </p>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Chip>{formatStatusLabel(report.status)}</Chip>
-            <Chip>{formatPriorityLabel(report.priority)}</Chip>
-            {report.submissionStatus !==
-            BUG_REPORT_SUBMISSION_STATUS_OPTIONS.ready ? (
-              <Chip>
-                {formatSubmissionStatusLabel(report.submissionStatus)}
-              </Chip>
-            ) : null}
-            {report.debuggerIngestionStatus ===
-            BUG_REPORT_DEBUGGER_INGESTION_STATUS_OPTIONS.failed ? (
-              <Chip>Debugger ingest failed</Chip>
-            ) : null}
-            {report.tags.slice(0, 2).map((tag) => (
-              <Chip key={tag}>
-                <Tag className="size-3" />
-                {tag}
-              </Chip>
-            ))}
-            {report.tags.length > 2 ? (
-              <Chip>+{report.tags.length - 2}</Chip>
-            ) : null}
-          </div>
+          <div className="flex flex-wrap items-center gap-1.5">{chips}</div>
 
-          {report.debuggerIngestionError ? (
-            <p className="line-clamp-2 text-amber-700 text-xs">
-              {report.debuggerIngestionError}
-            </p>
-          ) : null}
+          {ingestionError}
         </div>
       </CardContent>
-      <EditBugReportSheet
-        onOpenChange={setIsEditSheetOpen}
-        onUpdated={onReportUpdated}
-        open={isEditSheetOpen}
-        report={{
-          id: report.id,
-          title: report.title,
-          tags: report.tags,
-          status: report.status,
-          priority: report.priority,
-          visibility: report.visibility,
-        }}
-      />
+      {editSheet}
     </Card>
   )
 }

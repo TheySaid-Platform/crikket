@@ -26,6 +26,8 @@ import {
 } from "@crikket/ui/components/ui/select"
 import {
   Filter,
+  LayoutGrid,
+  List,
   Search,
   Shield,
   Tag,
@@ -34,6 +36,7 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 
+import type { BugReportsView } from "../../_hooks/use-bug-reports-view"
 import {
   type DashboardFilters,
   formatPriorityLabel,
@@ -51,6 +54,8 @@ interface BugReportsToolbarProps {
   sort: BugReportSort
   filters: DashboardFilters
   stats?: BugReportStats
+  view: BugReportsView
+  onViewChange: (value: BugReportsView) => void
   onSearchChange: (value: string) => void
   onSortChange: (value: BugReportSort) => void
   onToggleStatus: (value: BugReportStatus) => void
@@ -72,6 +77,8 @@ export function BugReportsToolbar({
   sort,
   filters,
   stats,
+  view,
+  onViewChange,
   onSearchChange,
   onSortChange,
   onToggleStatus,
@@ -173,6 +180,27 @@ export function BugReportsToolbar({
           >
             Clear filters
           </Button>
+
+          <div className="inline-flex items-center rounded-md border p-0.5">
+            <Button
+              aria-label="Grid view"
+              aria-pressed={view === "grid"}
+              onClick={() => onViewChange("grid")}
+              size="icon-sm"
+              variant={view === "grid" ? "secondary" : "ghost"}
+            >
+              <LayoutGrid />
+            </Button>
+            <Button
+              aria-label="List view"
+              aria-pressed={view === "list"}
+              onClick={() => onViewChange("list")}
+              size="icon-sm"
+              variant={view === "list" ? "secondary" : "ghost"}
+            >
+              <List />
+            </Button>
+          </div>
         </div>
       </div>
 

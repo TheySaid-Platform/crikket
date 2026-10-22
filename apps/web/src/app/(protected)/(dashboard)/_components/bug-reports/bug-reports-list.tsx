@@ -8,6 +8,7 @@ import { SelectionActionBar } from "@/components/selection-action-bar"
 import { useBugReportsActions } from "../../_hooks/use-bug-reports-actions"
 import { useBugReportsData } from "../../_hooks/use-bug-reports-data"
 import { useBugReportsFilters } from "../../_hooks/use-bug-reports-filters"
+import { useBugReportsView } from "../../_hooks/use-bug-reports-view"
 import { BugReportCard } from "./bug-report-card"
 import { BugReportsBulkActions } from "./bug-reports-bulk-actions"
 import { BugReportsDeleteDialogs } from "./bug-reports-delete-dialogs"
@@ -15,6 +16,11 @@ import { BugReportsToolbar } from "./bug-reports-toolbar"
 
 export function BugReportsList() {
   const filtersState = useBugReportsFilters()
+  const { view, setView } = useBugReportsView()
+  const layoutClassName =
+    view === "list"
+      ? "flex flex-col gap-2"
+      : "grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
 
   const {
     reports,
@@ -53,9 +59,11 @@ export function BugReportsList() {
         onTogglePriority={filtersState.togglePriority}
         onToggleStatus={filtersState.toggleStatus}
         onToggleVisibility={filtersState.toggleVisibility}
+        onViewChange={setView}
         search={filtersState.searchValue}
         sort={filtersState.sort}
         stats={stats}
+        view={view}
       />
 
       <SelectionActionBar
@@ -96,10 +104,13 @@ export function BugReportsList() {
       ) : null}
 
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className={layoutClassName}>
           {["s1", "s2", "s3", "s4"].map((skeletonKey) => (
             <div
-              className="aspect-video w-full animate-pulse rounded-lg bg-muted"
+              className={cn(
+                "w-full animate-pulse rounded-lg bg-muted",
+                view === "list" ? "h-20" : "aspect-video"
+              )}
               key={skeletonKey}
             />
           ))}
@@ -138,7 +149,7 @@ export function BugReportsList() {
       ) : null}
 
       {reports.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        <div className={layoutClassName}>
           {reports.map((report) => (
             <BugReportCard
               isChecked={actionsState.selectedIds.has(report.id)}
@@ -159,6 +170,7 @@ export function BugReportsList() {
                 })
               }
               report={report}
+              view={view}
             />
           ))}
         </div>
