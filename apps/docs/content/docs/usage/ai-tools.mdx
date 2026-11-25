@@ -63,9 +63,10 @@ same way.
 | Tool | What it returns |
 | --- | --- |
 | `get_bug_context` | Start here: details, steps, the first error of each tab with its stack, console errors and warnings, failed requests with bodies, and moments worth seeing |
-| `list_bug_reports` | Reports in your organization, filtered by text, status, priority or visibility |
+| `list_bug_reports` | Reports in your organization, filtered by text, status, priority, visibility, tags (any of), creation date (`createdAfter`, `createdBefore`) or reports you reported (`mine`) |
 | `get_bug_report` | One report's details, device, open tabs and a link to the video or screenshot |
 | `get_reproduction_steps` | What the user did, in order |
+| `get_timeline` | Steps, console logs and network requests merged into one time-ordered list, narrowed to a range (`from: "step:3"`, `to: "1:05"`), kinds or a tab |
 | `get_console_logs` | Console output, filtered by level, text or tab |
 | `get_network_requests` | Network requests, filtered by status (`"4xx"`, `"500"`), method, host or content type, with bodies of failed requests |
 | `get_network_request_details` | One request's headers and bodies |
@@ -88,8 +89,9 @@ when a report is captured.
 > Debug this bug: https://app.example.com/s/gVQoTvqv0vRo
 
 The AI calls `get_bug_context`, reads the failed requests and console errors,
-and can then open a single request with `get_network_request_details` or look
-at the screen around the failure with `get_video_frames`.
+and can then open a single request with `get_network_request_details`, see
+everything that happened around the failure with `get_timeline`, or look at the
+screen at that moment with `get_video_frames`.
 
 Frames are cut on the server with ffmpeg, which the server image installs. On
 a self-hosted server without ffmpeg, `get_video_frames` says it is not

@@ -4,6 +4,7 @@ import { createGate, MediaBusyError } from "../src/media/gate"
 import {
   describeTarget,
   resolveFrameTarget,
+  resolveMoment,
   STEP_FRAME_DELAY_MS,
 } from "../src/media/targets"
 import {
@@ -42,6 +43,17 @@ describe("resolveFrameTarget", () => {
     expect(offsetOf("step:2")).toBe(4000 + STEP_FRAME_DELAY_MS)
     expect(offsetOf("Step 4")).toBe(12_500 + STEP_FRAME_DELAY_MS)
     expect(offsetOf("step#1")).toBe(STEP_FRAME_DELAY_MS)
+  })
+
+  it("resolveMoment puts a step at its own time, without the frame delay", () => {
+    const step = resolveMoment("step:2", STEPS)
+    const time = resolveMoment("0:45", STEPS)
+    expect(step).toMatchObject({
+      ok: true,
+      target: { offsetMs: 4000, step: 2 },
+    })
+    expect(time).toMatchObject({ ok: true, target: { offsetMs: 45_000 } })
+    expect(resolveMoment("step:9", STEPS).ok).toBe(false)
   })
 
   it("explains steps it cannot show", () => {

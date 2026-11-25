@@ -197,7 +197,7 @@ describe("MCP request handler: HTTP layer", () => {
     expect(body.result.instructions).toContain("get_bug_context")
   })
 
-  it("lists eight read-only tools", async () => {
+  it("lists nine read-only tools", async () => {
     const { handler } = setup({})
     const response = await handler(
       post({ jsonrpc: "2.0", id: 1, method: "tools/list" })
@@ -215,6 +215,7 @@ describe("MCP request handler: HTTP layer", () => {
       "get_network_request_details",
       "get_network_requests",
       "get_reproduction_steps",
+      "get_timeline",
       "get_video_frames",
       "list_bug_reports",
     ])
@@ -569,6 +570,242 @@ describe("MCP tools", () => {
     expect(reader.calls[0]).toBe(
       'listReports:{"search":"checkout","statuses":["open"],"visibilities":["public"],"sort":"newest","page":1,"perPage":20}'
     )
+  })
+})
+
+describe("list_bug_reports filters", () => {
+  const report = makeReport({ id: "rpt_1" })
+
+  it("passes tags, dates and mine to the list procedure", async () => {
+    const reader = makeReader({ reports: { rpt_1: report } })
+    const { handler } = setup({ reader })
+    const { result } = await callTool(handler, "list_bug_reports", {
+      tags: ["checkout", "payments"],
+      createdAfter: "2026-11-01",
+      createdBefore: "2026-11-08T12:00:00+02:00",
+      mine: true,
+    })
+
+    expect(result.isError).toBeUndefined()
+    expect(
+      JSON.parse(reader.calls[0]?.slice("listReports:".length) ?? "")
+    ).toMatchObject({
+      tags: ["checkout", "payments"],
+      createdAfter: "2026-11-01T00:00:00.000Z",
+      createdBefore: "2026-11-08T10:00:00.000Z",
+      mine: true,
+    })
+  })
+
+  it("rejects dates that are not ISO, before reading anything", async () => {
+    const reader = makeReader({ reports: { rpt_1: report } })
+    const { handler } = setup({ reader })
+    const { result } = await callTool(handler, "list_bug_reports", {
+      createdAfter: "last tuesday",
+    })
+
+    expect(result.isError).toBe(true)
+    expect(reader.calls).toHaveLength(0)
+  })
+})
+
+describe("get_timeline", () => {
+  const report = makeReport({ id: "rpt_1" })
+
+  /**
+   * Two steps, a log, and two requests whose offsets interleave; one step
+   * and one log happened before the recording started.
+   */
+  function timelineReader() {
+    const at = (second: number) =>
+      new Date(Date.UTC(2026, 9, 12, 9, 0, second)).toISOString()
+    const base = makeEvents({ actions: 3, errors: 2 })
+    const [first, second, third] = base.actions
+    const [log0, log1] = base.logs
+    const requests = makeRequests({ total: 2, failEvery: 2 })
+    const [req0, req1] = requests
+    if (!(first && second && third && log0 && log1 && req0 && req1)) {
+      throw new Error("fixture")
+    }
+
+    return makeReader({
+      reports: { rpt_1: report },
+      events: {
+        rpt_1: {
+          actions: [
+            { ...first, timestamp: at(0), offset: null },
+            { ...second, timestamp: at(2), offset: 2000 },
+            { ...third, timestamp: at(6), offset: 6000, tabId: 12 },
+          ],
+          logs: [
+            { ...log0, timestamp: at(1), offset: null },
+            { ...log1, timestamp: at(4), offset: 4000 },
+          ],
+        },
+      },
+      requests: {
+        rpt_1: [
+          { ...req0, timestamp: at(3), offset: 3000 },
+          { ...req1, timestamp: at(5), offset: 5000, tabId: 12 },
+        ],
+      },
+    })
+  }
+
+  type Item = {
+    kind: string
+    step?: number
+    id?: string
+    offsetMs: number | null
+  }
+  const labels = (items: Item[]) =>
+    items.map((item) =>
+      item.kind === "step"
+        ? `step:${item.step}`
+        : item.kind === "network"
+          ? item.id
+          : `console@${item.offsetMs}`
+    )
+
+  it("merges steps, logs and requests in time order", async () => {
+    const { handler } = setup({ reader: timelineReader() })
+    const { json } = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+    })
+    const page = json()
+
+    expect(labels(page.items)).toEqual([
+      "step:1",
+      "console@null",
+      "step:2",
+      "req_0",
+      "console@4000",
+      "req_1",
+      "step:3",
+    ])
+    expect(page.countsByKind).toEqual({ step: 3, console: 2, network: 2 })
+    expect(page.items[3]).toMatchObject({ kind: "network", status: 500 })
+    // Log items are short: no metadata.
+    expect(page.items[1].details).toBeUndefined()
+  })
+
+  it("narrows to a range given as steps or times", async () => {
+    const { handler } = setup({ reader: timelineReader() })
+    const bySteps = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      from: "step:2",
+      to: "step:3",
+    })
+    expect(labels(bySteps.json().items)).toEqual([
+      "step:2",
+      "req_0",
+      "console@4000",
+      "req_1",
+      "step:3",
+    ])
+    expect(bySteps.json().range).toMatchObject({ fromMs: 2000, toMs: 6000 })
+
+    const byTime = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      from: "3s",
+      to: 4000,
+    })
+    expect(labels(byTime.json().items)).toEqual(["req_0", "console@4000"])
+
+    // Only an end: events from before the recording are still included.
+    const untilTwo = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      to: "0:02",
+    })
+    expect(labels(untilTwo.json().items)).toEqual([
+      "step:1",
+      "console@null",
+      "step:2",
+    ])
+  })
+
+  it("filters by kind and tab, keeping global step numbers", async () => {
+    const reader = timelineReader()
+    const { handler } = setup({ reader })
+    const kinds = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      kinds: ["step", "network"],
+    })
+    expect(labels(kinds.json().items)).toEqual([
+      "step:1",
+      "step:2",
+      "req_0",
+      "req_1",
+      "step:3",
+    ])
+
+    const tab = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      tabId: 12,
+    })
+    expect(labels(tab.json().items)).toEqual(["req_1", "step:3"])
+  })
+
+  it("skips reads a kind filter makes unnecessary", async () => {
+    const reader = timelineReader()
+    const { handler } = setup({ reader })
+    await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      kinds: ["network"],
+    })
+    expect(
+      reader.calls.some((call) => call.startsWith("getDebuggerEvents"))
+    ).toBe(false)
+
+    reader.calls.length = 0
+    await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      kinds: ["console"],
+    })
+    expect(
+      reader.calls.some((call) => call.startsWith("getNetworkRequestsPage"))
+    ).toBe(false)
+  })
+
+  it("pages with offset and limit", async () => {
+    const { handler } = setup({ reader: timelineReader() })
+    const { json } = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      offset: 2,
+      limit: 3,
+    })
+    const page = json()
+
+    expect(page.total).toBe(7)
+    expect(labels(page.items)).toEqual(["step:2", "req_0", "console@4000"])
+    expect(page.nextOffset).toBe(5)
+  })
+
+  it("explains unknown steps and reversed ranges", async () => {
+    const { handler } = setup({ reader: timelineReader() })
+    const unknown = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      from: "step:9",
+    })
+    expect(unknown.result.isError).toBe(true)
+    expect(unknown.text).toContain("There is no step 9")
+
+    const reversed = await callTool(handler, "get_timeline", {
+      report: "rpt_1",
+      from: "0:05",
+      to: "0:02",
+    })
+    expect(reversed.result.isError).toBe(true)
+    expect(reversed.text).toContain("must not be after")
+  })
+
+  it("reports a report it cannot see", async () => {
+    const { handler } = setup({ reader: timelineReader() })
+    const { result, text } = await callTool(handler, "get_timeline", {
+      report: "rpt_other",
+    })
+    expect(result.isError).toBe(true)
+    expect(text).toContain("Bug report not found")
   })
 })
 

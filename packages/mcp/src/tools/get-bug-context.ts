@@ -44,7 +44,7 @@ export function registerGetBugContextTool(
     {
       title: "Get bug context",
       description:
-        "Start here. Get everything needed to debug one bug report in a single call: its details, the user's steps, the first error of each tab in full (with its stack), console errors and warnings, failed network requests (the first few with bodies), and moments worth seeing with get_video_frames. Times are offsetMs, ms from the start of the video. Long lists keep their first and last items; use the other tools to read the rest.",
+        "Start here. Get everything needed to debug one bug report in a single call: its details, the user's steps, the first error of each tab in full (with its stack), console errors and warnings, failed network requests (the first few with bodies), and moments worth seeing with get_video_frames. Times are offsetMs, ms from the start of the video. Long lists keep their first and last items; use the other tools to read the rest, and get_timeline to see steps, logs and requests together around a moment.",
       inputSchema: { report: reportInputSchema },
       annotations: READ_ONLY_ANNOTATIONS,
     },
