@@ -32,6 +32,27 @@ export function resolveFrameTarget(
   request: FrameRequest,
   stepOffsets: (number | null)[]
 ): FrameTargetResult {
+  const resolved = resolveMoment(request, stepOffsets)
+  if (!resolved.ok || resolved.target.step === null) {
+    return resolved
+  }
+  return {
+    ok: true,
+    target: {
+      ...resolved.target,
+      offsetMs: resolved.target.offsetMs + STEP_FRAME_DELAY_MS,
+    },
+  }
+}
+
+/**
+ * Like resolveFrameTarget, but a step resolves to the moment it happened,
+ * without the delay frames add to show its result.
+ */
+export function resolveMoment(
+  request: FrameRequest,
+  stepOffsets: (number | null)[]
+): FrameTargetResult {
   const label = String(request).trim()
 
   const stepMatch = STEP_PATTERN.exec(label)
@@ -54,7 +75,7 @@ export function resolveFrameTarget(
     }
     return {
       ok: true,
-      target: { label, offsetMs: stepOffset + STEP_FRAME_DELAY_MS, step },
+      target: { label, offsetMs: stepOffset, step },
     }
   }
 

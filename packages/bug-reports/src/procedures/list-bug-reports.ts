@@ -16,7 +16,20 @@ import {
   buildPaginationMeta,
   type PaginatedResult,
 } from "@crikket/shared/lib/server/pagination"
-import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import {
+  and,
+  arrayOverlaps,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm"
 import { z } from "zod"
 import { isExpiringSignedUrl, resolveCaptureUrl } from "../lib/storage"
 import {
@@ -99,6 +112,14 @@ const listBugReportsInputSchema = z
       .max(visibilityValues.length)
       .optional(),
     sort: z.enum(sortValues).default(BUG_REPORT_SORT_OPTIONS.newest),
+    /** Reports carrying any of these tags (exact names). */
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+    /** Created at or after this time. */
+    createdAfter: z.coerce.date().optional(),
+    /** Created strictly before this time. */
+    createdBefore: z.coerce.date().optional(),
+    /** Only reports the caller reported. */
+    mine: z.boolean().optional(),
   })
   .optional()
 
@@ -299,6 +320,24 @@ export const listBugReports = protectedProcedure
         filters.push(
           inArray(bugReport.visibility, Array.from(new Set(input.visibilities)))
         )
+      }
+
+      if (input?.tags && input.tags.length > 0) {
+        filters.push(
+          arrayOverlaps(bugReport.tags, Array.from(new Set(input.tags)))
+        )
+      }
+
+      if (input?.createdAfter) {
+        filters.push(gte(bugReport.createdAt, input.createdAfter))
+      }
+
+      if (input?.createdBefore) {
+        filters.push(lt(bugReport.createdAt, input.createdBefore))
+      }
+
+      if (input?.mine) {
+        filters.push(eq(bugReport.reporterId, context.session.user.id))
       }
 
       const whereClause =

@@ -106,6 +106,16 @@ surfaces an install link, or grab it directly from the Chrome Web Store.
 
 - [Capture quick start docs](https://crikket.io/docs/usage/quick-start)
 
+## AI Tools (MCP)
+
+Crikket runs a remote MCP server at `/api/mcp`, so Claude Code, Cursor and
+other MCP clients can read bug reports while they debug. Paste a report link
+into your AI tool and it reads the steps, console logs, network requests and
+video frames itself. Create a personal access key in **Settings → AI Tools
+(MCP)**. All tools are read-only.
+
+- [AI tools docs](./apps/docs/content/docs/usage/ai-tools.mdx)
+
 ## Monorepo Overview
 
 Crikket is a Bun + Turborepo monorepo.
